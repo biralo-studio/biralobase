@@ -57,7 +57,7 @@ flowchart LR
 
 No application image build is required. Runtime and builder must have the same Biralobase version, platform, Node ABI, and compatible Linux base. Native npm dependencies are built on the target architecture.
 
-See [deployment](docs/deployment.md) for the Compose configuration and application GitHub Action template, [application development](docs/application.md) for schema/functions/MCP, and [testing](docs/testing.md) for the compatibility and release gates.
+See [deployment](docs/deployment.md) for the Compose configuration and application GitHub Action template, [application development](docs/application.md) for schema/functions/MCP, and [testing](docs/testing.md) for the compatibility and release gates. The [second reviewer briefing](docs/reviewer-handoff.md) records the real-application qualification, fixes, deployed test environment, and remaining release blockers.
 
 ## Development checks
 
