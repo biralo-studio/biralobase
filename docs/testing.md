@@ -31,7 +31,7 @@ A stable release requires successful native matrix runs, crash/recovery, contain
 
 ## Local evidence
 
-During implementation on macOS arm64: the SQLite reference suite and the full Turso regression suite passed; all new feature suites passed; official JS and Dart SDK tests passed in development and immutable production modes; forced-kill recovery and a 30-second, eight-writer storage soak passed (85,600 acknowledged inserts with read/rollback verification). Race detection and a 30-second schema fuzz run passed. After updating Go and transitive OAuth dependencies, the reachable-vulnerability scan found zero vulnerabilities. Full final-matrix results belong to CI artifacts and must not be inferred from these local checks.
+During implementation on macOS arm64: the SQLite reference suite and the full Turso regression suite passed; all new feature suites passed; official JS and Dart SDK tests passed in development and immutable production modes; forced-kill recovery and a 30-second, eight-writer storage soak passed (85,600 acknowledged inserts with read/rollback verification). Race detection and a 30-second schema fuzz run passed. The Linux ARM64 runtime/builder images built successfully; the non-root, read-only container served compiled TypeScript functions and remained healthy after a persistent-volume restart. After updating Go and transitive OAuth dependencies, the reachable-vulnerability scan found zero vulnerabilities. Full final-matrix results belong to CI artifacts and must not be inferred from these local checks.
 
 Long-duration and native Linux qualification are not claimed complete by the local smoke run. No production release is certified merely because this code exists.
 

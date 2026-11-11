@@ -68,6 +68,7 @@ func (s Schema) Validate() error {
 		return errors.New("unsupported schema format version")
 	}
 	ids, names := map[string]bool{}, map[string]bool{}
+	authCollections := map[string]bool{}
 	fieldsByCollection := map[string]map[string]map[string]any{}
 	for _, c := range s.Collections {
 		name, _ := c["name"].(string)
@@ -83,6 +84,10 @@ func (s Schema) Validate() error {
 		}
 		ids[id] = true
 		names[strings.ToLower(name)] = true
+		if c["type"] == core.CollectionTypeAuth {
+			authCollections[id] = true
+			authCollections[name] = true
+		}
 		fieldIDs, fieldNames := map[string]bool{}, map[string]map[string]any{}
 		fields, ok := c["fields"].([]any)
 		if !ok {
@@ -99,6 +104,15 @@ func (s Schema) Validate() error {
 			fieldIDs[fid], fieldNames[fname] = true, f
 		}
 		fieldsByCollection[id] = fieldNames
+	}
+	if len(s.MCP) > 0 {
+		auth := s.AuthCollection
+		if auth == "" {
+			auth = "users"
+		}
+		if !authCollections[auth] {
+			return errors.New("MCP authCollection must reference an application auth collection")
+		}
 	}
 	toolNames := map[string]bool{}
 	for id, exposure := range s.MCP {

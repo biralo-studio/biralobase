@@ -26,7 +26,7 @@ cd my-app
 npm install
 npm run build
 export BIRALOBASE_ADMIN_EMAIL=admin@example.com
-# Set BIRALOBASE_ADMIN_PASSWORD_FILE to a private file containing your password.
+export BIRALOBASE_ADMIN_PASSWORD_FILE=/absolute/path/to/your/private/password-file
 ../bin/biralobase --app-dir . --data-dir ./bb_data serve --dev
 ```
 

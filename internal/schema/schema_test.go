@@ -152,6 +152,21 @@ func TestProductionSchemaGuard(t *testing.T) {
 	}
 }
 
+func TestMCPAuthCollectionIsValidatedBeforeDeployment(t *testing.T) {
+	_, s := newSchemaProject(t)
+	s.MCP = map[string]Exposure{"notescollection": {Name: "notes", Description: "Notes", Actions: []string{"list"}, Fields: []string{"id", "title"}}}
+	for _, name := range []string{"missing", "notes", "_superusers"} {
+		s.AuthCollection = name
+		if err := s.Validate(); err == nil {
+			t.Fatalf("accepted invalid MCP auth collection %s", name)
+		}
+	}
+	s.AuthCollection = "users"
+	if err := s.Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestDashboardExportGenerationAndPhysicalDrift(t *testing.T) {
 	root, s := newSchemaProject(t)
 	app, cleanup, err := Sandbox()
