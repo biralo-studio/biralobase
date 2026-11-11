@@ -2,10 +2,16 @@
 set -euo pipefail
 runtime_image=${BIRALOBASE_TEST_RUNTIME_IMAGE:-biralobase:ci}
 builder_image=${BIRALOBASE_TEST_BUILDER_IMAGE:-biralobase-builder:ci}
-scratch=$(mktemp -d)
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+mkdir -p "$root/.artifacts"
+# Keep fixtures on the shared workspace. Colima does not automatically share
+# macOS's /var/folders temporary directories with its Docker daemon.
+scratch=$(mktemp -d "$root/.artifacts/container.XXXXXX")
 container=''
 volume=''
 cleanup() {
+  local status=$?
+  if [ "$status" -ne 0 ] && [ -n "$container" ]; then docker logs "$container" 2>&1 || true; fi
   if [ -n "$container" ]; then docker rm -f "$container" >/dev/null 2>&1 || true; fi
   if [ -n "$volume" ]; then docker volume rm "$volume" >/dev/null 2>&1 || true; fi
   rm -rf -- "$scratch"
@@ -17,7 +23,10 @@ printf '%s' 'container-test-password' > "$scratch/secrets/admin_password"
 printf '%s' '01234567890123456789012345678901' > "$scratch/secrets/encryption_key"
 chmod 755 "$scratch" "$scratch/secrets"
 chmod 444 "$scratch/secrets/"*
-docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$scratch/app:/workspace" -w /workspace "$builder_image" bash -euc '
+# VM-backed Docker can map the host UID differently. Use the mounted owner's
+# actual container UID so the fixture remains writable and removable on both.
+builder_uid=$(docker run --rm -v "$scratch/app:/workspace" "$builder_image" stat -c '%u:%g' /workspace)
+docker run --rm --user "$builder_uid" -e HOME=/tmp -v "$scratch/app:/workspace" -w /workspace "$builder_image" bash -euc '
   biralobase init .
   npm install --install-links --no-audit --no-fund
   npm test
@@ -37,9 +46,21 @@ container=$(docker run -d --read-only --cap-drop ALL --security-opt no-new-privi
   -e BIRALOBASE_ENCRYPTION_KEY_FILE=/run/secrets/encryption_key "$runtime_image")
 binding=$(docker port "$container" 8090/tcp)
 base="http://127.0.0.1:${binding##*:}"
+get() {
+  if [ "$(uname -s)" = Darwin ]; then
+    # Check the container directly when the local VM's port forwarder is not
+    # available. Linux CI additionally verifies the published host endpoint.
+    docker exec "$container" node --input-type=module -e '
+      const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(3000)});
+      if(!r.ok)process.exit(1);process.stdout.write(await r.text());
+    ' "http://127.0.0.1:8090$1"
+  else
+    curl --connect-timeout 1 --max-time 3 -fsS "$base$1"
+  fi
+}
 ready() {
   for attempt in {1..120}; do
-    if curl -fsS "$base/api/biralobase/ready" >/dev/null 2>&1; then return; fi
+    if get /api/biralobase/ready >/dev/null 2>&1; then return; fi
     if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then break; fi
     sleep 1
   done
@@ -47,12 +68,12 @@ ready() {
   return 1
 }
 ready
-curl -fsS "$base/api/functions/hello" > "$scratch/hello.json"
+get /api/functions/hello > "$scratch/hello.json"
 docker run --rm -v "$scratch:/test:ro" "$builder_image" node -e '
   const fs=require("node:fs");if(JSON.parse(fs.readFileSync("/test/hello.json")).message!=="Hello from Biralobase")process.exit(1)
 '
 test "$(docker exec "$container" id -u)" = 10001
 docker restart "$container" >/dev/null
 ready
-curl -fsS "$base/api/functions/hello" >/dev/null
+get /api/functions/hello >/dev/null
 echo 'Non-root, read-only container and persistent restart passed'

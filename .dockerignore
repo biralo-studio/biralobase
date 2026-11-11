@@ -3,6 +3,7 @@ bb_data
 pb_data
 node_modules
 **/node_modules
+**/.dart_tool
 bin
 .builds
 releases
