@@ -207,3 +207,39 @@ func TestImmutableStartupMigrationFunctionsProvisioningAndRestart(t *testing.T) 
 		t.Fatal("production settings are not encrypted")
 	}
 }
+
+// Core ignores checkpoint errors after writing a backup because some drivers
+// lack the pragma. On Turso that hid a snapshot which blocked every later
+// checkpoint, so after its first backup a server kept all new rows in the MVCC
+// log and in memory. Startup takes such a backup whenever migrations are
+// pending.
+func TestBackupLeavesBothDatabasesAbleToCheckpoint(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "app")
+	s, err := schema.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Write(filepath.Join(source, schema.FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	srv, err := server.Open(context.Background(), provision.Config{AppDir: source, DataDir: filepath.Join(root, "data"), HTTP: "127.0.0.1:0", Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	started := time.Now()
+	if err = srv.App.CreateBackup(context.Background(), "checkpoint.zip"); err != nil {
+		t.Fatal(err)
+	}
+	// Each blocked checkpoint used to wait for the whole busy timeout.
+	if elapsed := time.Since(started); elapsed > 4*time.Second {
+		t.Errorf("backup of an empty application took %v", elapsed.Round(time.Millisecond))
+	}
+	if _, err = srv.App.NonconcurrentDB().NewQuery("PRAGMA wal_checkpoint(TRUNCATE)").Execute(); err != nil {
+		t.Errorf("data checkpoint after backup: %v", err)
+	}
+	if _, err = srv.App.AuxNonconcurrentDB().NewQuery("PRAGMA wal_checkpoint(TRUNCATE)").Execute(); err != nil {
+		t.Errorf("auxiliary checkpoint after backup: %v", err)
+	}
+}

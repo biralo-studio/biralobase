@@ -8,7 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/pocketbase/dbx"
@@ -31,14 +33,36 @@ func (e *Engine) Connect(path string) (*dbx.DB, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := sql.OpenDB(&connector{base: base, concurrent: e.concurrent.Load})
+	db := sql.OpenDB(&connector{base: base, concurrent: e.concurrent.Load, commits: commitGate(path)})
 	// dbx's sqlite dialect is independent of the underlying SQL driver.
 	return dbx.NewFromDB(db, "sqlite"), nil
+}
+
+// The v0.8.3 engine admits one committer at a time and makes every other
+// committer poll for that turn inside the native call. Each waiting commit
+// then occupies a CPU for the whole of another transaction's log sync, which
+// starves request handling: 16 writers on two CPUs spent 30 times the CPU of
+// one writer for a quarter of its throughput. Waiting in Go instead parks the
+// goroutine. Statements inside transactions still run concurrently; only the
+// final COMMIT is ordered, and conflicts are reported exactly as before.
+//
+// Gates are keyed by database file rather than by Engine or pool, because the
+// read and write pools of one file (and separately constructed engines) all
+// commit to the same native database.
+var commitGates sync.Map
+
+func commitGate(path string) chan struct{} {
+	if absolute, err := filepath.Abs(path); err == nil {
+		path = absolute
+	}
+	gate, _ := commitGates.LoadOrStore(filepath.Clean(path), make(chan struct{}, 1))
+	return gate.(chan struct{})
 }
 
 type connector struct {
 	base       driver.Connector
 	concurrent func() bool
+	commits    chan struct{}
 }
 
 func (c *connector) Driver() driver.Driver { return c.base.Driver() }
@@ -47,7 +71,7 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn := &connection{Conn: raw, concurrent: c.concurrent}
+	conn := &connection{Conn: raw, concurrent: c.concurrent, commits: c.commits}
 	for _, query := range []string{"PRAGMA journal_mode=mvcc", "PRAGMA synchronous=FULL", "PRAGMA foreign_keys=ON"} {
 		if _, err := conn.ExecContext(ctx, query, nil); err != nil {
 			raw.Close()
@@ -60,8 +84,40 @@ func (c *connector) Connect(ctx context.Context) (driver.Conn, error) {
 type connection struct {
 	driver.Conn
 	concurrent func() bool
+	commits    chan struct{}
 	invalid    atomic.Bool
 	inTx       atomic.Bool
+}
+
+// commit waits for this database's commit turn without occupying a CPU. A
+// caller that gives up while waiting has not committed and must roll back.
+func (c *connection) commit(ctx context.Context) (driver.Result, error) {
+	if c.commits != nil {
+		select {
+		case c.commits <- struct{}{}:
+			defer func() { <-c.commits }()
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return c.Conn.(driver.ExecerContext).ExecContext(ctx, "COMMIT", nil)
+}
+
+// releaseSnapshot ends the read snapshot that the v0.8.3 engine leaves
+// registered after VACUUM INTO. Closing the connection does not remove it, and
+// while it exists every checkpoint fails as busy: the main database file is
+// never updated again, and the MVCC log and its in-memory row versions grow
+// until the process restarts. Opening and rolling back a transaction on the
+// same connection is what makes the engine drop the snapshot.
+func (c *connection) releaseSnapshot() error {
+	exec := c.Conn.(driver.ExecerContext)
+	if _, err := exec.ExecContext(context.Background(), "BEGIN", nil); err != nil {
+		return fmt.Errorf("release backup snapshot: %w", err)
+	}
+	if _, err := exec.ExecContext(context.Background(), "ROLLBACK", nil); err != nil {
+		return fmt.Errorf("release backup snapshot: %w", err)
+	}
+	return nil
 }
 
 func (c *connection) IsValid() bool { return !c.invalid.Load() && !c.inTx.Load() }
@@ -122,7 +178,13 @@ func (c *connection) ExecContext(ctx context.Context, q string, args []driver.Na
 			return nil, err
 		}
 	}
-	result, err := c.Conn.(driver.ExecerContext).ExecContext(ctx, q, args)
+	var result driver.Result
+	var err error
+	if command == "COMMIT" {
+		result, err = c.commit(ctx)
+	} else {
+		result, err = c.Conn.(driver.ExecerContext).ExecContext(ctx, q, args)
+	}
 	if err == nil && (strings.HasPrefix(command, "BEGIN ") || command == "BEGIN") {
 		c.inTx.Store(true)
 	}
@@ -131,7 +193,7 @@ func (c *connection) ExecContext(ctx context.Context, q string, args []driver.Na
 	}
 	if auto {
 		if err == nil {
-			_, err = c.Conn.(driver.ExecerContext).ExecContext(ctx, "COMMIT", nil)
+			_, err = c.commit(ctx)
 		}
 		if err != nil {
 			if _, rollbackErr := c.Conn.(driver.ExecerContext).ExecContext(context.Background(), "ROLLBACK", nil); rollbackErr != nil {
@@ -141,10 +203,12 @@ func (c *connection) ExecContext(ctx context.Context, q string, args []driver.Na
 		}
 		c.inTx.Store(false)
 	}
-	if err == nil && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(q)), "VACUUM INTO ") {
+	if err == nil && strings.HasPrefix(command, "VACUUM INTO ") {
 		// The v0.8.3 engine leaves the snapshot connection pinned after VACUUM
-		// INTO. Discard it rather than returning stale reads to the pool.
+		// INTO. Discard it rather than returning stale reads to the pool, and
+		// release its snapshot so that it cannot block later checkpoints.
 		c.invalid.Store(true)
+		err = c.releaseSnapshot()
 	}
 	return result, err
 }
