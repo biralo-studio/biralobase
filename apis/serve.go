@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/routine"
-	"github.com/pocketbase/pocketbase/ui"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/routine"
+	"github.com/biralo-studio/biralobase/ui"
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
 )

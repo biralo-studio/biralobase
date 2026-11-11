@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/types"
 	"github.com/spf13/cast"
 	"golang.org/x/crypto/bcrypt"
 )

@@ -16,11 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/store"
+	"github.com/biralo-studio/biralobase/tools/filesystem"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/store"
 )
 
 var errIsDir = errors.New("the specified path is a directory and not a regular file")
@@ -85,6 +84,7 @@ func (app *BaseApp) CreateBackup(ctx context.Context, name string) error {
 		LocalNotifyDirName,
 		LocalAutocertCacheDirName,
 		lostFoundDirName,
+		".biralobase.lock",
 	}
 
 	return app.OnBackupCreate().Trigger(event, func(e *BackupEvent) error {
@@ -207,7 +207,9 @@ func createZip(be *BackupEvent, tempZipPath string) error {
 	dataStartTime := time.Now()
 	tempDataDBPath := filepath.Join(localTempDir, dataDBFilename)
 
-	_, err = be.App.ConcurrentDB().NewQuery("VACUUM INTO {:path}").Bind(dbx.Params{"path": tempDataDBPath}).Execute()
+	// VACUUM's destination is a SQL literal in Turso (not a bind parameter).
+	// The path is generated locally; quote apostrophes as SQL string literals.
+	_, err = be.App.ConcurrentDB().NewQuery("VACUUM INTO '" + strings.ReplaceAll(tempDataDBPath, "'", "''") + "'").Execute()
 	if err != nil {
 		return err
 	}
@@ -230,6 +232,8 @@ func createZip(be *BackupEvent, tempZipPath string) error {
 	excluded.Set(normalizePathExclude(dataDBFilename), struct{}{})
 	excluded.Set(normalizePathExclude(dataDBFilename+"-wal"), struct{}{})
 	excluded.Set(normalizePathExclude(dataDBFilename+"-shm"), struct{}{})
+	// Turso's MVCC log belongs to the live database, not the VACUUM snapshot.
+	excluded.Set(normalizePathExclude(dataDBFilename+"-log"), struct{}{})
 
 	// init to-be-created files tracker
 	// ---------------------------------------------------------------
@@ -253,7 +257,7 @@ func createZip(be *BackupEvent, tempZipPath string) error {
 	auxStartTime := time.Now()
 	tempAuxDBPath := filepath.Join(localTempDir, auxDBFilename)
 
-	_, err = be.App.AuxConcurrentDB().NewQuery("VACUUM INTO {:path}").Bind(dbx.Params{"path": tempAuxDBPath}).Execute()
+	_, err = be.App.AuxConcurrentDB().NewQuery("VACUUM INTO '" + strings.ReplaceAll(tempAuxDBPath, "'", "''") + "'").Execute()
 	if err != nil {
 		return err
 	}
@@ -273,6 +277,7 @@ func createZip(be *BackupEvent, tempZipPath string) error {
 	excluded.Set(normalizePathExclude(auxDBFilename), struct{}{})
 	excluded.Set(normalizePathExclude(auxDBFilename+"-wal"), struct{}{})
 	excluded.Set(normalizePathExclude(auxDBFilename+"-shm"), struct{}{})
+	excluded.Set(normalizePathExclude(auxDBFilename+"-log"), struct{}{})
 
 	// try to run manual checkpoints to ensure that all wal writes during the
 	// previous VACUUM INTO are transferred and don't accumulate

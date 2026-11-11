@@ -6,14 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pocketbase/pocketbase"
-	"github.com/pocketbase/pocketbase/apis"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/plugins/jsvm"
-	"github.com/pocketbase/pocketbase/plugins/migratecmd"
-	"github.com/pocketbase/pocketbase/plugins/update"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/osutils"
+	"github.com/biralo-studio/biralobase"
+	"github.com/biralo-studio/biralobase/apis"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/plugins/jsvm"
+	"github.com/biralo-studio/biralobase/plugins/migratecmd"
+	"github.com/biralo-studio/biralobase/plugins/update"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/osutils"
 )
 
 func main() {

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/router"
+	"github.com/biralo-studio/biralobase/tools/routine"
 	"github.com/spf13/cast"
 )
 

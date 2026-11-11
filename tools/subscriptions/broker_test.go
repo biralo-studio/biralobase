@@ -3,7 +3,7 @@ package subscriptions_test
 import (
 	"testing"
 
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
+	"github.com/biralo-studio/biralobase/tools/subscriptions"
 )
 
 func TestNewBroker(t *testing.T) {

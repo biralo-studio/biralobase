@@ -5,7 +5,7 @@ import (
 	"io"
 	"mime/multipart"
 
-	"github.com/pocketbase/pocketbase/tools/filesystem"
+	"github.com/biralo-studio/biralobase/tools/filesystem"
 	"github.com/spf13/cast"
 )
 

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
+	"github.com/biralo-studio/biralobase/core"
 )
 
 // automigrateOnCollectionChange handles the automigration snapshot

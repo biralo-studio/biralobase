@@ -10,15 +10,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pocketbase/pocketbase/cmd"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/osutils"
-	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/biralo-studio/biralobase/cmd"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/osutils"
+	"github.com/biralo-studio/biralobase/tools/routine"
 	"github.com/spf13/cobra"
 
-	_ "github.com/pocketbase/pocketbase/migrations"
+	_ "github.com/biralo-studio/biralobase/migrations"
 )
 
 var _ core.App = (*PocketBase)(nil)

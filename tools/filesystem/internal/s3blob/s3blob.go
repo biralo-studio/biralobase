@@ -40,9 +40,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/pocketbase/pocketbase/tools/filesystem/blob"
-	"github.com/pocketbase/pocketbase/tools/filesystem/internal/s3blob/s3"
-	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/biralo-studio/biralobase/tools/filesystem/blob"
+	"github.com/biralo-studio/biralobase/tools/filesystem/internal/s3blob/s3"
+	"github.com/biralo-studio/biralobase/tools/routine"
 )
 
 const defaultPageSize = 1000

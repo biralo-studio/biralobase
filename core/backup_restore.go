@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/pocketbase/pocketbase/tools/archive"
-	"github.com/pocketbase/pocketbase/tools/osutils"
-	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/archive"
+	"github.com/biralo-studio/biralobase/tools/osutils"
+	"github.com/biralo-studio/biralobase/tools/security"
 )
 
 // RestoreBackup restores the backup with the specified name and restarts

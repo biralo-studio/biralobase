@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/router"
+	"github.com/biralo-studio/biralobase/tools/tokenizer"
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/router"
 )
 
 const (
@@ -125,6 +126,22 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 			}
 
 			result.AffectedRows, err = execResult.RowsAffected()
+			// Match SQLite's last-statement result; Turso sums the changes
+			// counter across statements (including stale DDL counters).
+			tk := tokenizer.NewFromString(query)
+			tk.Separators(';')
+			parts, splitErr := tk.ScanAll()
+			if splitErr == nil && len(parts) > 0 {
+				words := strings.Fields(strings.ToUpper(parts[len(parts)-1]))
+				if len(words) > 0 {
+					switch words[0] {
+					case "INSERT", "UPDATE", "DELETE", "REPLACE":
+						err = txApp.NonconcurrentDB().NewQuery("SELECT changes()").WithContext(ctx).Row(&result.AffectedRows)
+					case "CREATE", "DROP", "ALTER":
+						result.AffectedRows = 0
+					}
+				}
+			}
 			if err != nil {
 				// non-critical error (e.g. not supported by the driver)
 				txApp.Logger().Debug("Unable to fetch affected rows", slog.String("error", err.Error()))
@@ -141,6 +158,30 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 
 	// assume query returning rows
 	// ---------------------------------------------------------------
+	tk := tokenizer.NewFromString(query)
+	tk.Separators(';')
+	parts, err := tk.ScanAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(parts) == 0 {
+		return nil, errors.New("empty query")
+	}
+	if len(parts) > 1 {
+		err := app.RunInTransaction(func(tx core.App) error {
+			for _, part := range parts[:len(parts)-1] {
+				if _, err := tx.DB().NewQuery(part).WithContext(ctx).Execute(); err != nil {
+					return err
+				}
+			}
+			last, err := executeQuery(tx, parts[len(parts)-1], maxRows)
+			if err == nil {
+				*result = *last
+			}
+			return err
+		})
+		return result, err
+	}
 	rows, err := app.ConcurrentDB().NewQuery(query).WithContext(ctx).Rows()
 	if err != nil {
 		return nil, err
@@ -159,7 +200,11 @@ func executeQuery(app core.App, query string, maxRows int) (*runSQLResult, error
 			Name: colType.Name(),
 			Type: colType.DatabaseTypeName(),
 		}
-		col.Nullable, _ = colType.Nullable()
+		var known bool
+		col.Nullable, known = colType.Nullable()
+		if !known {
+			col.Nullable = true
+		}
 
 		result.Columns = append(result.Columns, col)
 	}

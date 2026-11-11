@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
+	"github.com/biralo-studio/biralobase/tools/filesystem"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
 
 func TestFileFieldBaseMethods(t *testing.T) {

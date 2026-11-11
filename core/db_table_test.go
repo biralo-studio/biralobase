@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
 )
 
 func TestHasTable(t *testing.T) {
@@ -119,6 +119,17 @@ func TestTableInfo(t *testing.T) {
 	for i, s := range scenarios {
 		t.Run(fmt.Sprintf("%d_%s", i, s.tableName), func(t *testing.T) {
 			rows, _ := app.TableInfo(s.tableName)
+			// Turso prints a parsed default expression with outer parentheses
+			// and spacing. Compare that expression without printer differences.
+			for _, row := range rows {
+				if row.Name == "id" && row.DefaultValue.Valid {
+					value := tests.CanonicalSQL(row.DefaultValue.String)
+					if value == "('r'||lower(hex(randomblob(7))))" {
+						value = value[1 : len(value)-1]
+					}
+					row.DefaultValue.String = value
+				}
+			}
 
 			raw, err := json.Marshal(
 				rows,

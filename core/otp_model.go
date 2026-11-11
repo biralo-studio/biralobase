@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
 
 const CollectionNameOTPs = "_otps"

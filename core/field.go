@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core/validators"
-	"github.com/pocketbase/pocketbase/tools/list"
+	"github.com/biralo-studio/biralobase/core/validators"
+	"github.com/biralo-studio/biralobase/tools/list"
 )
 
 var fieldNameRegex = regexp.MustCompile(`^\w+$`)

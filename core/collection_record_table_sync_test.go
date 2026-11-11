@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
 
 func TestSyncRecordTableSchema(t *testing.T) {

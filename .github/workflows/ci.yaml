@@ -1,0 +1,69 @@
+name: compatibility
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+        engine: [sqlite, turso]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.13.1'
+      - name: Upstream regression suite and Biralobase tests
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          flags=()
+          if [ "$ENGINE" = turso ]; then flags=(-tags turso); fi
+          go test -p 2 -timeout 25m "${flags[@]}" ./...
+      - name: Race detector
+        if: matrix.engine == 'sqlite'
+        run: go test -race -p 2 -timeout 15m ./internal/... ./storage/...
+      - name: Schema fuzzing
+        if: matrix.engine == 'sqlite'
+        run: go test ./internal/schema -run '^$' -fuzz FuzzDecodeSchema -fuzztime 30s -parallel 2
+      - name: Reachable dependency vulnerabilities
+        if: matrix.engine == 'sqlite'
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./cmd/biralobase
+      - name: Build executable
+        run: go build -trimpath -o bin/biralobase ./cmd/biralobase
+      - name: JavaScript SDK compatibility
+        run: |
+          ./scripts/test-js-sdk.sh
+          BIRALOBASE_TEST_MODE=dev ./scripts/test-js-sdk.sh
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.9.4'
+      - name: Dart SDK compatibility
+        run: |
+          ./scripts/test-dart-sdk.sh
+          BIRALOBASE_TEST_MODE=dev ./scripts/test-dart-sdk.sh
+      - name: Container build
+        if: matrix.engine == 'turso'
+        run: |
+          docker build --target runtime -t biralobase:ci .
+          docker build --target builder -t biralobase-builder:ci .
+          ./scripts/test-container.sh
+  gate:
+    needs: test
+    runs-on: ubuntu-24.04
+    if: always()
+    steps:
+      - env:
+          RESULT: ${{ needs.test.result }}
+        run: test "$RESULT" = success

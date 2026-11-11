@@ -1,4 +1,4 @@
-//go:build !no_default_driver
+//go:build !no_default_driver && !turso
 
 package core
 

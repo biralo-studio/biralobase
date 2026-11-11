@@ -10,15 +10,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/picker"
+	"github.com/biralo-studio/biralobase/tools/router"
+	"github.com/biralo-studio/biralobase/tools/routine"
+	"github.com/biralo-studio/biralobase/tools/search"
+	"github.com/biralo-studio/biralobase/tools/subscriptions"
 	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/picker"
-	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/pocketbase/pocketbase/tools/routine"
-	"github.com/pocketbase/pocketbase/tools/search"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -331,6 +331,7 @@ func bindRealtimeEvents(app core.App) {
 	// reset the clients auth on collection secret change
 	// (@todo with the future tracking of old collections data consider replacing with *AfterUpdateSuccess to account for transaction rollback)
 	app.OnCollectionUpdate().Bind(&hook.Handler[*core.CollectionEvent]{
+		Id: "__bbRealtimeCollectionUpdate__",
 		Func: func(e *core.CollectionEvent) error {
 			if !e.Collection.IsAuth() {
 				return e.Next()
@@ -359,6 +360,7 @@ func bindRealtimeEvents(app core.App) {
 
 	// unset the clients auth on auth collection delete
 	app.OnCollectionAfterDeleteSuccess().Bind(&hook.Handler[*core.CollectionEvent]{
+		Id: "__bbRealtimeCollectionDelete__",
 		Func: func(e *core.CollectionEvent) error {
 			if e.Collection.IsAuth() {
 				if err := realtimeUnsetClientsAuthByCollection(e.App, e.Collection); err != nil {
@@ -377,6 +379,7 @@ func bindRealtimeEvents(app core.App) {
 
 	// update the clients that has auth record association
 	app.OnModelAfterUpdateSuccess().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeAuthUpdate__",
 		Func: func(e *core.ModelEvent) error {
 			authRecord := realtimeResolveRecord(e.App, e.Model, core.CollectionTypeAuth)
 			if authRecord != nil {
@@ -398,6 +401,7 @@ func bindRealtimeEvents(app core.App) {
 	// remove the client(s) associated to the deleted auth model
 	// (note: works also with custom model for backward compatibility)
 	app.OnModelAfterDeleteSuccess().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeAuthDelete__",
 		Func: func(e *core.ModelEvent) error {
 			collection := realtimeResolveRecordCollection(e.App, e.Model)
 			if collection != nil && collection.IsAuth() {
@@ -417,6 +421,7 @@ func bindRealtimeEvents(app core.App) {
 	})
 
 	app.OnModelAfterCreateSuccess().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeCreate__",
 		Func: func(e *core.ModelEvent) error {
 			record := realtimeResolveRecord(e.App, e.Model, "")
 			if record != nil {
@@ -437,6 +442,7 @@ func bindRealtimeEvents(app core.App) {
 	})
 
 	app.OnModelAfterUpdateSuccess().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeUpdate__",
 		Func: func(e *core.ModelEvent) error {
 			record := realtimeResolveRecord(e.App, e.Model, "")
 			if record != nil {
@@ -458,6 +464,7 @@ func bindRealtimeEvents(app core.App) {
 
 	// delete: dry cache
 	app.OnModelDelete().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeDeletePrepare__",
 		Func: func(e *core.ModelEvent) error {
 			record := realtimeResolveRecord(e.App, e.Model, "")
 			if record != nil {
@@ -482,6 +489,7 @@ func bindRealtimeEvents(app core.App) {
 
 	// delete: broadcast
 	app.OnModelAfterDeleteSuccess().Bind(&hook.Handler[*core.ModelEvent]{
+		Id: "__bbRealtimeDelete__",
 		Func: func(e *core.ModelEvent) error {
 			// note: only ensure that it is a collection record
 			// and don't use realtimeResolveRecord because in case of a
@@ -506,6 +514,7 @@ func bindRealtimeEvents(app core.App) {
 
 	// delete: failure
 	app.OnModelAfterDeleteError().Bind(&hook.Handler[*core.ModelErrorEvent]{
+		Id: "__bbRealtimeDeleteError__",
 		Func: func(e *core.ModelErrorEvent) error {
 			record := realtimeResolveRecord(e.App, e.Model, "")
 			if record != nil {

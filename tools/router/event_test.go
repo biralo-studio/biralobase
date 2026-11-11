@@ -20,9 +20,9 @@ import (
 	"testing"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/tools/picker"
-	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/tools/picker"
+	"github.com/biralo-studio/biralobase/tools/router"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
 
 type unwrapTester struct {

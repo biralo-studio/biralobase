@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
 )
 
 func TestRecordRequestVerification(t *testing.T) {

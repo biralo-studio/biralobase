@@ -8,11 +8,11 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/biralo-studio/biralobase/tools/dbutils"
+	"github.com/biralo-studio/biralobase/tools/inflector"
+	"github.com/biralo-studio/biralobase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/tokenizer"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
-	"github.com/pocketbase/pocketbase/tools/inflector"
-	"github.com/pocketbase/pocketbase/tools/security"
-	"github.com/pocketbase/pocketbase/tools/tokenizer"
 )
 
 // DeleteView drops the specified view name.
@@ -22,7 +22,14 @@ import (
 // NB! Be aware that this method is vulnerable to SQL injection and the
 // "dangerousViewName" argument must come only from trusted input!
 func (app *BaseApp) DeleteView(dangerousViewName string) error {
-	_, err := app.DB().NewQuery(fmt.Sprintf(
+	// Some SQLite-compatible engines silently accept DROP VIEW for a table.
+	// Preserve the API's error instead of making the operation a false success.
+	var objectType string
+	err := app.DB().NewQuery("SELECT type FROM sqlite_schema WHERE name={:name}").Bind(dbx.Params{"name": dangerousViewName}).Row(&objectType)
+	if err == nil && objectType != "view" {
+		return fmt.Errorf("%s is not a view", dangerousViewName)
+	}
+	_, err = app.DB().NewQuery(fmt.Sprintf(
 		"DROP VIEW IF EXISTS {{%s}}",
 		dangerousViewName,
 	)).Execute()
@@ -66,6 +73,19 @@ func (app *BaseApp) SaveView(dangerousViewName string, dangerousSelectQuery stri
 
 			return err
 		}
+		// Introspection alone may describe an invalid view on other engines.
+		// Preparing a zero-row query resolves its references without reading data.
+		rows, err := txApp.DB().NewQuery(fmt.Sprintf("SELECT * FROM {{%s}} LIMIT 0", dangerousViewName)).Rows()
+		if err != nil {
+			_ = txApp.DeleteView(dangerousViewName)
+			return err
+		}
+		rows.Next() // force deferred query preparation without reading any rows
+		queryErr := rows.Err()
+		if err = errors.Join(queryErr, rows.Close()); err != nil {
+			_ = txApp.DeleteView(dangerousViewName)
+			return err
+		}
 
 		return nil
 	})
@@ -107,7 +127,17 @@ func (app *BaseApp) CreateViewFields(dangerousSelectQuery string) (FieldsList, e
 			if f, ok := suggestedFields[row.Name]; ok {
 				field = f.field
 			} else {
-				field = defaultViewField(row.Name)
+				// SQL identifiers are case insensitive, but collection field names
+				// in the public API retain their declared spelling.
+				for name, f := range suggestedFields {
+					if strings.EqualFold(name, row.Name) {
+						field = f.field
+						break
+					}
+				}
+				if field == nil {
+					field = defaultViewField(row.Name)
+				}
 			}
 
 			result.Add(field)
@@ -277,6 +307,14 @@ func (app *BaseApp) FindRecordByViewFile(viewCollectionModelOrIdentifier any, fi
 // (the check is not perfect and it is NOT intended as a security measure; it is done primarily to provide a helpful error message)
 func normalizeViewSelectQuery(dangerousSelectQuery string) (string, error) {
 	dangerousSelectQuery = strings.Trim(strings.TrimSpace(dangerousSelectQuery), ";")
+	for strings.HasPrefix(dangerousSelectQuery, "(") && strings.HasSuffix(dangerousSelectQuery, ")") {
+		inner := strings.TrimSpace(dangerousSelectQuery[1 : len(dangerousSelectQuery)-1])
+		check := tokenizer.NewFromString(inner)
+		if _, err := check.ScanAll(); err != nil {
+			break
+		}
+		dangerousSelectQuery = inner
+	}
 
 	tk := tokenizer.NewFromString(dangerousSelectQuery)
 	tk.Separators(';')
@@ -324,8 +362,13 @@ func defaultViewIdField() Field {
 var castRegex = regexp.MustCompile(`(?is)^cast\s*\(.*\s+as\s+(\w+)\s*\)$`)
 
 func parseQueryToFields(app App, selectQuery string) (map[string]*queryField, error) {
+	var err error
+	selectQuery, err = normalizeViewSelectQuery(selectQuery)
+	if err != nil {
+		return nil, err
+	}
 	p := new(identifiersParser)
-	if err := p.parse(selectQuery); err != nil {
+	if err := p.parse(firstCompoundSelect(selectQuery)); err != nil {
 		return nil, err
 	}
 
@@ -490,6 +533,24 @@ func parseQueryToFields(app App, selectQuery string) (map[string]*queryField, er
 	}
 
 	return result, nil
+}
+
+// A compound select exposes the columns of its first arm. Keep quoted values
+// and nested subqueries intact while extracting that arm for field inference.
+func firstCompoundSelect(query string) string {
+	tk := tokenizer.NewFromString(query)
+	tk.Separators(' ', '\n', '\t', '\r')
+	parts, err := tk.ScanAll()
+	if err != nil {
+		return query
+	}
+	for i, part := range parts {
+		switch strings.ToUpper(part) {
+		case "UNION", "INTERSECT", "EXCEPT":
+			return strings.Join(parts[:i], " ")
+		}
+	}
+	return query
 }
 
 func findCollectionsByIdentifiers(app App, tables []identifier) (map[string]*Collection, error) {

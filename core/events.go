@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tools/auth"
-	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/mailer"
-	"github.com/pocketbase/pocketbase/tools/router"
-	"github.com/pocketbase/pocketbase/tools/search"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
+	"github.com/biralo-studio/biralobase/tools/auth"
+	"github.com/biralo-studio/biralobase/tools/filesystem"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/mailer"
+	"github.com/biralo-studio/biralobase/tools/router"
+	"github.com/biralo-studio/biralobase/tools/search"
+	"github.com/biralo-studio/biralobase/tools/subscriptions"
 	"golang.org/x/crypto/acme/autocert"
 )
 

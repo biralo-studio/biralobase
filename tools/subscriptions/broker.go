@@ -3,8 +3,8 @@ package subscriptions
 import (
 	"fmt"
 
-	"github.com/pocketbase/pocketbase/tools/list"
-	"github.com/pocketbase/pocketbase/tools/store"
+	"github.com/biralo-studio/biralobase/tools/list"
+	"github.com/biralo-studio/biralobase/tools/store"
 )
 
 // Broker defines a struct for managing subscriptions clients.

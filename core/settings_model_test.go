@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/mailer"
-	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
+	"github.com/biralo-studio/biralobase/tools/mailer"
+	"github.com/biralo-studio/biralobase/tools/security"
 )
 
 func TestSettingsDelete(t *testing.T) {

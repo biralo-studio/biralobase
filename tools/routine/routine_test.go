@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/tools/routine"
+	"github.com/biralo-studio/biralobase/tools/routine"
 )
 
 func TestFireAndForget(t *testing.T) {

@@ -15,17 +15,17 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/biralo-studio/biralobase/tools/cron"
+	"github.com/biralo-studio/biralobase/tools/filesystem"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/logger"
+	"github.com/biralo-studio/biralobase/tools/mailer"
+	"github.com/biralo-studio/biralobase/tools/routine"
+	"github.com/biralo-studio/biralobase/tools/store"
+	"github.com/biralo-studio/biralobase/tools/subscriptions"
+	"github.com/biralo-studio/biralobase/tools/types"
 	"github.com/fatih/color"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tools/cron"
-	"github.com/pocketbase/pocketbase/tools/filesystem"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/logger"
-	"github.com/pocketbase/pocketbase/tools/mailer"
-	"github.com/pocketbase/pocketbase/tools/routine"
-	"github.com/pocketbase/pocketbase/tools/store"
-	"github.com/pocketbase/pocketbase/tools/subscriptions"
-	"github.com/pocketbase/pocketbase/tools/types"
 	"github.com/spf13/cast"
 	"golang.org/x/sync/semaphore"
 )
@@ -69,6 +69,9 @@ type BaseAppConfig struct {
 	DataMaxIdleConns int
 	AuxMaxOpenConns  int
 	AuxMaxIdleConns  int
+	// ConcurrentWrites removes the SQLite-specific single-writer pool limit.
+	// Enable only with a connector implementing concurrent write transactions.
+	ConcurrentWrites bool
 	IsDev            bool
 }
 
@@ -1272,6 +1275,10 @@ func (app *BaseApp) initDataDB() error {
 	}
 	nonconcurrentDB.DB().SetMaxOpenConns(1)
 	nonconcurrentDB.DB().SetMaxIdleConns(1)
+	if app.config.ConcurrentWrites {
+		nonconcurrentDB.DB().SetMaxOpenConns(app.config.DataMaxOpenConns)
+		nonconcurrentDB.DB().SetMaxIdleConns(app.config.DataMaxIdleConns)
+	}
 	nonconcurrentDB.DB().SetConnMaxIdleTime(3 * time.Minute)
 
 	if app.IsDev() {
@@ -1334,6 +1341,10 @@ func (app *BaseApp) initAuxDB() error {
 	}
 	nonconcurrentDB.DB().SetMaxOpenConns(1)
 	nonconcurrentDB.DB().SetMaxIdleConns(1)
+	if app.config.ConcurrentWrites {
+		nonconcurrentDB.DB().SetMaxOpenConns(app.config.AuxMaxOpenConns)
+		nonconcurrentDB.DB().SetMaxIdleConns(app.config.AuxMaxIdleConns)
+	}
 	nonconcurrentDB.DB().SetConnMaxIdleTime(3 * time.Minute)
 
 	app.auxConcurrentDB = concurrentDB

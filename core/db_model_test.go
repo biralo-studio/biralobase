@@ -3,7 +3,7 @@ package core_test
 import (
 	"testing"
 
-	"github.com/pocketbase/pocketbase/core"
+	"github.com/biralo-studio/biralobase/core"
 )
 
 func TestBaseModel(t *testing.T) {

@@ -1,163 +1,75 @@
-<p align="center">
-    <a href="https://pocketbase.io" target="_blank" rel="noopener">
-        <img src="https://i.imgur.com/aCBbjKx.png" alt="PocketBase - open source backend in 1 file" />
-    </a>
-</p>
+# Biralobase
 
-<p align="center">
-    <a href="https://github.com/pocketbase/pocketbase/actions/workflows/release.yaml" target="_blank" rel="noopener"><img src="https://github.com/pocketbase/pocketbase/actions/workflows/release.yaml/badge.svg" alt="build" /></a>
-    <a href="https://github.com/pocketbase/pocketbase/releases" target="_blank" rel="noopener"><img src="https://img.shields.io/github/release/pocketbase/pocketbase.svg" alt="Latest releases" /></a>
-    <a href="https://pkg.go.dev/github.com/pocketbase/pocketbase" target="_blank" rel="noopener"><img src="https://godoc.org/github.com/pocketbase/pocketbase?status.svg" alt="Go package documentation" /></a>
-</p>
+PocketBase applications on the embedded Rust Turso engine, with Git-managed schema, asynchronous TypeScript functions, immutable application releases, and OAuth-protected MCP tools.
 
-[PocketBase](https://pocketbase.io) is an open source Go backend that includes:
+**Experimental development release.** The implementation has automated regression coverage, but production certification requires the native Linux matrix, container verification, and extended stability gates described in [testing](docs/testing.md). Turso MVCC is experimental; concurrent transactions can conflict. This project makes no claim of lock-free operation or a measured speedup over SQLite.
 
-- embedded database (_SQLite_) with **realtime subscriptions**
-- built-in **files and users management**
-- convenient **Admin dashboard UI**
-- and simple **REST-ish API**
+Biralobase forks PocketBase **v0.40.6**. The original history, MIT license, dashboard, API implementation, and regression tests are retained. [UPSTREAM.json](UPSTREAM.json) records the upstream revision. This is an independent Biralo Studio project, not an official PocketBase or Turso product.
 
-**For documentation and examples, please visit https://pocketbase.io/docs.**
+## What is implemented
 
-> [!WARNING]
-> Please keep in mind that PocketBase is still under active development
-> and therefore full backward compatibility is not guaranteed before reaching v1.0.0.
+- Embedded Turso, `BEGIN CONCURRENT` for production writes, transaction cleanup, consistent backups, and one active process per data directory.
+- A versioned `biralobase.schema.json`; generated, ordered, checksummed migrations; automatic startup application; backups before migration; metadata and physical-schema drift detection.
+- Managed superuser creation and password rotation from environment variables or `_FILE` secrets, with a stable account ID.
+- Node-based async TypeScript functions and npm dependencies, a bridge for all PocketBase hooks, transactional event delivery, retryable background jobs, and durable UTC schedules.
+- Opt-in MCP tools generated from schema metadata, using OAuth authorization code + PKCE, explicit consent, refresh rotation, and PocketBase user permissions.
+- A reusable runtime image and matching builder image. Application deployments upload a verified bundle and restart the same runtime image. Images change when Biralobase or its runtime dependencies change.
 
-## API SDK clients
+## Local development
 
-The easiest way to interact with the PocketBase Web APIs is to use one of the official SDK clients:
-
-- **JavaScript - [pocketbase/js-sdk](https://github.com/pocketbase/js-sdk)** (_Browser, Node.js, React Native_)
-- **Dart - [pocketbase/dart-sdk](https://github.com/pocketbase/dart-sdk)** (_Web, Mobile, Desktop, CLI_)
-
-You could also check the recommendations in https://pocketbase.io/docs/how-to-use/.
-
-
-## Overview
-
-### Use as standalone app
-
-You could download the prebuilt executable for your platform from the [Releases page](https://github.com/pocketbase/pocketbase/releases).
-Once downloaded, extract the archive and run `./pocketbase serve` in the extracted directory.
-
-The prebuilt executables are based on the [`examples/base/main.go` file](https://github.com/pocketbase/pocketbase/blob/master/examples/base/main.go) and comes with the JS VM plugin enabled by default which allows to extend PocketBase with JavaScript (_for more details please refer to [Extend with JavaScript](https://pocketbase.io/docs/js-overview/)_).
-
-### Use as a Go framework/toolkit
-
-PocketBase is distributed as a regular Go library package which allows you to build
-your own custom app specific business logic and still have a single portable executable at the end.
-
-Here is a minimal example:
-
-0. [Install Go 1.27+](https://go.dev/doc/install) (_if you haven't already_)
-
-1. Create a new project directory with the following `main.go` file inside it:
-    ```go
-    package main
-
-    import (
-        "log"
-
-        "github.com/pocketbase/pocketbase"
-        "github.com/pocketbase/pocketbase/core"
-    )
-
-    func main() {
-        app := pocketbase.New()
-
-        app.OnServe().BindFunc(func(se *core.ServeEvent) error {
-            // registers new "GET /hello" route
-            se.Router.GET("/hello", func(re *core.RequestEvent) error {
-                return re.String(200, "Hello world!")
-            })
-
-            return se.Next()
-        })
-
-        if err := app.Start(); err != nil {
-            log.Fatal(err)
-        }
-    }
-    ```
-
-2. To init the dependencies, run `go mod init myapp && go mod tidy`.
-
-3. To start the application, run `go run main.go serve`.
-
-4. To build a statically linked executable, you can run `CGO_ENABLED=0 go build` and then start the created executable with `./myapp serve`.
-
-_For more details please refer to [Extend with Go](https://pocketbase.io/docs/go-overview/)._
-
-### Building and running the repo main.go example
-
-To build the minimal standalone executable, like the prebuilt ones in the releases page, you can simply run `go build` inside the `examples/base` directory:
-
-0. [Install Go 1.27+](https://go.dev/doc/install) (_if you haven't already_)
-1. Clone/download the repo
-2. Navigate to `examples/base`
-3. Run `CGO_ENABLED=0 go build` to build a binary for your current environment
-   _(or to target other platforms use `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build`; see https://go.dev/doc/install/source#environment)_
-4. Start the created executable by running `./base serve`.
-
-Note that the supported build targets by the pure Go SQLite driver at the moment are:
-
-| GOOS    | GOARCH  |
-|---------|---------|
-| darwin  | amd64   |
-| darwin  | arm64   |
-| freebsd | 386     |
-| freebsd | amd64   |
-| freebsd | arm     |
-| freebsd | arm64   |
-| linux   | 386     |
-| linux   | amd64   |
-| linux   | arm     |
-| linux   | arm64   |
-| linux   | loong64 |
-| linux   | ppc64le |
-| linux   | riscv64 |
-| linux   | s390x   |
-| netbsd  | amd64   |
-| openbsd | amd64   |
-| openbsd | arm64   |
-| windows | 386     |
-| windows | amd64   |
-| windows | arm64   |
-
-### Testing
-
-PocketBase comes with mixed bag of unit and integration tests.
-To run them, use the standard `go test` command:
+Requirements: Go 1.27.4 and Node 26.13.1 (versions pinned for reproducibility). Linux/macOS amd64/arm64 are the intended native targets.
 
 ```sh
-go test ./...
+go build -o bin/biralobase ./cmd/biralobase
+./bin/biralobase init ./my-app
+cd my-app
+npm install
+npm run build
+export BIRALOBASE_ADMIN_EMAIL=admin@example.com
+# Set BIRALOBASE_ADMIN_PASSWORD_FILE to a private file containing your password.
+../bin/biralobase --app-dir . --data-dir ./bb_data serve --dev
 ```
 
-Check also the [Testing guide](http://pocketbase.io/docs/testing) to learn how to write your own custom application tests.
+Commit `package-lock.json`. The dashboard is at `http://127.0.0.1:8090/_/`. Development mode permits dashboard schema/settings edits and uses exclusive transactions for DDL. Stop the process before exporting dashboard changes:
 
-## Security
+```sh
+../bin/biralobase --app-dir . --data-dir ./bb_data schema export
+../bin/biralobase --app-dir . schema generate
+../bin/biralobase --app-dir . schema check
+```
 
-If you discover a security vulnerability within PocketBase, please send an e-mail to **support at pocketbase.io**.
+Review and commit the schema and generated `migrations/*.json`. The next development startup reconciles already-applied dashboard changes only when they exactly match the generated schema. Alternatively, edit the versioned schema directly, generate migrations, and restart. Keep collection and field IDs stable to preserve data across renames.
 
-You could find more details in the project [Security policy](https://github.com/pocketbase/pocketbase/security/policy).
+## Deployment
 
-## Contributing
+```mermaid
+flowchart LR
+  A[Application Git commit] --> B[GitHub Action]
+  B --> C[Matching builder image]
+  C --> D[Tests + schema check + npm build]
+  D --> E[Immutable bundle with checksums]
+  E --> F[Upload to application host]
+  F --> G[Restart pinned runtime image]
+  G --> H[Verify + backup + migrate + provision]
+  H --> I[Ready: REST, realtime, functions, MCP]
+  V[(Persistent data volume)] --- G
+```
 
-PocketBase is free and open source project licensed under the [MIT License](LICENSE.md).
-You are free to do whatever you want with it, even offering it as a paid service.
+No application image build is required. Runtime and builder must have the same Biralobase version, platform, Node ABI, and compatible Linux base. Native npm dependencies are built on the target architecture.
 
-You could help continuing its development by:
+See [deployment](docs/deployment.md) for the Compose configuration and application GitHub Action template, [application development](docs/application.md) for schema/functions/MCP, and [testing](docs/testing.md) for the compatibility and release gates.
 
-- [Contribute to the source code](CONTRIBUTING.md)
-- [Suggest new features and report issues](https://github.com/pocketbase/pocketbase/issues)
+## Development checks
 
-Please refrain creating PRs for _new features_ without previously discussing the implementation details.
-PocketBase has a [roadmap](https://github.com/orgs/pocketbase/projects/2) and I try to work on issues in specific order and such PRs often come in out of nowhere and skew all initial planning with tedious back-and-forth communication.
+```sh
+go test -p 2 ./...                         # SQLite reference + new features
+go test -p 2 -tags turso -timeout 25m ./... # upstream suite on Turso
+go test -race -p 2 ./internal/... ./storage/...
+go test ./internal/schema -run '^$' -fuzz FuzzDecodeSchema -fuzztime 30s
+./scripts/test-js-sdk.sh
+./scripts/test-dart-sdk.sh
+```
 
-Don't get upset if I close your PR, even if it is well executed and tested. This doesn't mean that it will never be merged.
-Later we can always refer to it and/or take pieces of your implementation when the time comes to work on the issue (don't worry you'll be credited in the release notes).
+The SDK scripts default to immutable production bundles with concurrent writes. `BIRALOBASE_TEST_MODE=dev` also exercises mutable dashboard behavior. Dart is needed for the Dart suite.
 
-> [!IMPORTANT]
-> Due to recent LLM spam, PRs are temporary disabled and only existing collaborators can open a PR.
-> If you stumble on a problem that you want to fix, please consider instead opening an issue or discussion with link to your fork _(if not obvious - LLM contributions are not welcome)_.
-> This status may change in the future in case GitHub finally decide to do something about the constant spam, or when I find time to move the project somewhere else.
+Use the Biralobase executable for the assembled product. The inherited root Go library and `examples/base` remain useful for upstream compatibility testing; their default driver is SQLite unless built with `-tags turso`.

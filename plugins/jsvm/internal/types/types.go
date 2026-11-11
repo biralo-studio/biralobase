@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/plugins/jsvm"
-	"github.com/pocketbase/pocketbase/tools/list"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/plugins/jsvm"
+	"github.com/biralo-studio/biralobase/tools/list"
 	"github.com/pocketbase/tygoja"
 )
 
@@ -1291,14 +1291,14 @@ func main() {
 		Packages: map[string][]string{
 			"github.com/pocketbase/ozzo-validation/v4":          {"Error"},
 			"github.com/pocketbase/dbx":                         {"*"},
-			"github.com/pocketbase/pocketbase/tools/security":   {"*"},
-			"github.com/pocketbase/pocketbase/tools/filesystem": {"*"},
-			"github.com/pocketbase/pocketbase/tools/template":   {"*"},
-			"github.com/pocketbase/pocketbase/mails":            {"*"},
-			"github.com/pocketbase/pocketbase/apis":             {"*"},
-			"github.com/pocketbase/pocketbase/core":             {"*"},
-			"github.com/pocketbase/pocketbase/forms":            {"*"},
-			"github.com/pocketbase/pocketbase":                  {"*"},
+			"github.com/biralo-studio/biralobase/tools/security":   {"*"},
+			"github.com/biralo-studio/biralobase/tools/filesystem": {"*"},
+			"github.com/biralo-studio/biralobase/tools/template":   {"*"},
+			"github.com/biralo-studio/biralobase/mails":            {"*"},
+			"github.com/biralo-studio/biralobase/apis":             {"*"},
+			"github.com/biralo-studio/biralobase/core":             {"*"},
+			"github.com/biralo-studio/biralobase/forms":            {"*"},
+			"github.com/biralo-studio/biralobase":                  {"*"},
 			"path/filepath":                                     {"*"},
 			"os":                                                {"*"},
 			"os/exec":                                           {"Command"},

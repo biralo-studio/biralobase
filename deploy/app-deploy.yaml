@@ -1,0 +1,63 @@
+# Copy into the APPLICATION repository as .github/workflows/deploy.yaml.
+# Runtime images are built only by the Biralobase repository.
+name: deploy-application
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    # Choose ubuntu-24.04-arm when the host is ARM64. Native npm dependencies
+    # must be compiled on the same architecture and Node ABI as the runtime.
+    runs-on: ${{ vars.BIRALOBASE_RUNNER || 'ubuntu-24.04' }}
+    environment: production
+    env:
+      BUILDER_IMAGE: ${{ vars.BIRALOBASE_BUILDER_IMAGE }}
+      SSH_TARGET: ${{ vars.BIRALOBASE_SSH_TARGET }}
+      HOST_DIR: ${{ vars.BIRALOBASE_HOST_DIR }}
+      REVISION: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate deployment configuration
+        run: |
+          [[ "$BUILDER_IMAGE" = *@sha256:* ]]
+          [[ "$REVISION" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$HOST_DIR" =~ ^/[a-zA-Z0-9_/-]+$ ]]
+          [[ "$SSH_TARGET" =~ ^[a-zA-Z0-9_.-]+@[a-zA-Z0-9_.-]+$ ]]
+      - name: Build and check immutable application bundle
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e REVISION \
+            -v "$PWD:/workspace" -w /workspace "$BUILDER_IMAGE" bash -euc '
+              npm ci --install-links
+              npm test
+              npm run build
+              biralobase --app-dir . schema check
+              npm prune --omit=dev --install-links
+              biralobase --app-dir . bundle build --revision "$REVISION" --output "releases/$REVISION"
+            '
+          tar -czf release.tar.gz -C "releases/$REVISION" .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: application-${{ github.sha }}
+          path: release.tar.gz
+      - name: Install deployment SSH credentials
+        env:
+          DEPLOY_KEY: ${{ secrets.BIRALOBASE_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.BIRALOBASE_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY" > ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_ed25519 ~/.ssh/known_hosts
+      - name: Upload release and restart the existing runtime image
+        run: |
+          scp -o BatchMode=yes release.tar.gz "$SSH_TARGET:$HOST_DIR/incoming-$REVISION.tar.gz"
+          ssh -o BatchMode=yes "$SSH_TARGET" "bash '$HOST_DIR/activate.sh' '$REVISION'"
+      - name: Remove deployment key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

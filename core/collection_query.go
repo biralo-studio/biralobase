@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/biralo-studio/biralobase/tools/list"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tools/list"
 )
 
 const StoreKeyCachedCollections = "pbAppCachedCollections"
@@ -255,23 +255,37 @@ func (app *BaseApp) TruncateCollection(collection *Collection) error {
 // currently we don't support non-string model ids
 // (see https://github.com/pocketbase/pocketbase/issues/3110).
 func normalizeViewQueryId(app App, query string) (string, error) {
-	query = strings.Trim(strings.TrimSpace(query), ";")
+	query, err := normalizeViewSelectQuery(query)
+	if err != nil {
+		return "", err
+	}
 
 	info, err := getQueryTableInfo(app, query)
 	if err != nil {
 		return "", err
 	}
 
-	for _, row := range info {
-		if strings.EqualFold(row.Name, FieldNameId) && strings.EqualFold(row.Type, "TEXT") {
-			return query, nil // no wrapping needed
-		}
-	}
-
 	// raw parse to preserve the columns order
 	rawParsed := new(identifiersParser)
-	if err := rawParsed.parse(query); err != nil {
+	if err := rawParsed.parse(firstCompoundSelect(query)); err != nil {
 		return "", err
+	}
+	// Turso describes untyped view expressions as TEXT. Only trust that
+	// metadata for column references and explicit text casts; computed IDs
+	// still need a CAST so record identity is always a string.
+	for _, col := range rawParsed.columns {
+		if col.alias != FieldNameId {
+			continue
+		}
+		cast := castRegex.FindStringSubmatch(strings.ToLower(col.original))
+		isReference := len(col.original) > 0 && ((col.original[0] >= 'a' && col.original[0] <= 'z') || (col.original[0] >= 'A' && col.original[0] <= 'Z') || col.original[0] == '_') && !strings.ContainsAny(col.original, " ()+-/*|'\"")
+		if isReference || (len(cast) == 2 && cast[1] == "text") {
+			for _, row := range info {
+				if strings.EqualFold(row.Name, FieldNameId) && strings.EqualFold(row.Type, "TEXT") {
+					return query, nil
+				}
+			}
+		}
 	}
 
 	columns := make([]string, 0, len(rawParsed.columns))

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/security"
 )
 
 func TestRandomString(t *testing.T) {

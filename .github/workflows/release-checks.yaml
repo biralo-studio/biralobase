@@ -1,0 +1,36 @@
+name: release-checks
+on:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  compatibility:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.13.1'
+      - run: go test -p 2 -timeout 25m ./...
+      - run: go test -p 2 -tags turso -timeout 25m ./...
+      - run: go test -race -p 2 ./internal/... ./storage/...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./cmd/biralobase
+      - run: go build -o bin/biralobase ./cmd/biralobase
+      - run: ./scripts/test-js-sdk.sh
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: '3.9.4'
+      - run: ./scripts/test-dart-sdk.sh
+      - name: Container release check
+        run: |
+          docker build --target runtime -t biralobase:ci .
+          docker build --target builder -t biralobase-builder:ci .
+          ./scripts/test-container.sh

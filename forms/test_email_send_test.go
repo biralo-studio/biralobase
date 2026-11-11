@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/forms"
-	"github.com/pocketbase/pocketbase/tests"
+	"github.com/biralo-studio/biralobase/forms"
+	"github.com/biralo-studio/biralobase/tests"
 )
 
 func TestEmailSendValidateAndSubmit(t *testing.T) {

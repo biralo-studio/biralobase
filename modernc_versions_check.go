@@ -6,7 +6,7 @@ import (
 	"runtime/debug"
 
 	"github.com/fatih/color"
-	"github.com/pocketbase/pocketbase/core"
+	"github.com/biralo-studio/biralobase/core"
 )
 
 const (

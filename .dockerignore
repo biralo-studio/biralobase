@@ -1,0 +1,14 @@
+.git
+bb_data
+pb_data
+node_modules
+**/node_modules
+bin
+.builds
+releases
+coverage.out
+.env*
+secrets
+**/secrets
+
+.artifacts

@@ -6,7 +6,7 @@ import (
 	"regexp"
 
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/core"
+	"github.com/biralo-studio/biralobase/core"
 )
 
 func backupCreate(e *core.RequestEvent) error {

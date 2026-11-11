@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
 
 // LogQuery returns a new Log select query.

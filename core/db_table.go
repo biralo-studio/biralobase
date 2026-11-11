@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/biralo-studio/biralobase/tools/dbutils"
 	"github.com/pocketbase/dbx"
 )
 
@@ -74,7 +75,13 @@ func (app *BaseApp) TableIndexes(tableName string) (map[string]string, error) {
 	result := make(map[string]string, len(indexes))
 
 	for _, idx := range indexes {
-		result[idx.Name] = idx.Sql
+		// Preserve the declared spelling; Turso normalizes sqlite_schema.name.
+		parsed := dbutils.ParseIndex(idx.Sql)
+		name := idx.Name
+		if parsed.IsValid() {
+			name = parsed.IndexName
+		}
+		result[name] = idx.Sql
 	}
 
 	return result, nil

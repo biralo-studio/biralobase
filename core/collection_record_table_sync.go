@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/biralo-studio/biralobase/tools/dbutils"
+	"github.com/biralo-studio/biralobase/tools/security"
 	"github.com/pocketbase/dbx"
 	validation "github.com/pocketbase/ozzo-validation/v4"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
-	"github.com/pocketbase/pocketbase/tools/security"
 )
 
 // SyncRecordTableSchema compares the two provided collections
@@ -228,7 +228,7 @@ func normalizeSingleVsMultipleFieldChanges(app App, newCollection *Collection, o
 								THEN '[]'
 								ELSE (
 									CASE
-										WHEN json_valid([[%s]]) AND json_type([[%s]]) == 'array'
+										WHEN CASE WHEN json_valid([[%s]]) THEN json_type([[%s]]) == 'array' ELSE false END
 										THEN [[%s]]
 										ELSE json_array([[%s]])
 									END
@@ -255,7 +255,7 @@ func normalizeSingleVsMultipleFieldChanges(app App, newCollection *Collection, o
 							THEN ''
 							ELSE (
 								CASE
-									WHEN json_valid([[%s]]) AND json_type([[%s]]) == 'array'
+									WHEN CASE WHEN json_valid([[%s]]) THEN json_type([[%s]]) == 'array' ELSE false END
 									THEN COALESCE(json_extract([[%s]], '$[#-1]'), '')
 									ELSE [[%s]]
 								END

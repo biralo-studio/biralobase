@@ -9,9 +9,9 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/fsnotify/fsnotify"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/routine"
-	"github.com/pocketbase/pocketbase/tools/security"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/routine"
+	"github.com/biralo-studio/biralobase/tools/security"
 )
 
 const systemHookIdNotifyWatcher = "__pbNotifyWatcherSystemHook__"
@@ -76,7 +76,9 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 			if err := os.WriteFile(settingsFile, nil, 0644); err != nil {
 				e.App.Logger().Warn("Failed to write watcher file", "error", err, "file", settingsFile)
 			}
-			_ = os.Remove(settingsFile)
+			// Keep the signal until termination. Creating and immediately deleting
+			// it can be coalesced into only a Remove event by kqueue, losing the
+			// notification. Subsequent writes update the existing signal file.
 		}
 
 		return nil
@@ -103,7 +105,6 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 			if err := os.WriteFile(collectionsFile, nil, 0644); err != nil {
 				e.App.Logger().Warn("Failed to write watcher file", "error", err, "file", collectionsFile)
 			}
-			_ = os.Remove(collectionsFile)
 		}
 
 		return nil

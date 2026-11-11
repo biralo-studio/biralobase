@@ -1,0 +1,37 @@
+name: extended-stability
+on:
+  schedule:
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+    inputs:
+      duration:
+        description: Continuous soak duration (6h nightly; 24h release candidate)
+        default: 24h
+        type: choice
+        options: [6h, 24h]
+permissions:
+  contents: read
+jobs:
+  soak:
+    # GitHub-hosted jobs cannot run a continuous 24-hour gate. Provision
+    # disposable, dedicated runners with these labels before enabling releases.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [X64, ARM64]
+    runs-on: [self-hosted, Linux, biralobase-soak, '${{ matrix.arch }}']
+    timeout-minutes: 1560
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.27.4'
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '26.13.1'
+      - name: Continuous storage load and crash recovery
+        env:
+          BIRALOBASE_SOAK_DURATION: ${{ inputs.duration || '6h' }}
+        run: go test -count=1 -v -timeout 25h ./storage/turso -run 'TestStorageSoak|TestCrashRecovery'
+      - name: Full regression suite after soak
+        run: go test -p 2 -tags turso -timeout 25m ./...

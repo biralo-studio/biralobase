@@ -5,7 +5,7 @@ import (
 	"encoding/json/v2"
 	"net/http"
 
-	"github.com/pocketbase/pocketbase/tools/types"
+	"github.com/biralo-studio/biralobase/tools/types"
 	"golang.org/x/oauth2"
 )
 

@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
+	"github.com/biralo-studio/biralobase/tools/dbutils"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/types"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
-	"github.com/pocketbase/pocketbase/tools/dbutils"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/tools/types"
 )
 
 func TestNewCollection(t *testing.T) {
@@ -1672,7 +1672,7 @@ func TestCollectionSaveViewWrapping(t *testing.T) {
 				t.Fatalf("Failed to retrieve view sql: %v", rowErr)
 			}
 
-			if sql != s.expected {
+			if tests.CanonicalSQL(sql) != tests.CanonicalSQL(s.expected) {
 				t.Fatalf("Expected query \n%v, \ngot \n%v", s.expected, sql)
 			}
 		})

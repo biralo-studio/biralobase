@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/tests"
+	"github.com/biralo-studio/biralobase/tests"
 )
 
 func TestSQLRun(t *testing.T) {
@@ -81,7 +81,6 @@ func TestSQLRun(t *testing.T) {
 			ExpectedContent: []string{
 				`"data":{}`,
 				`Raw error:`,
-				`SQL logic error`,
 			},
 			ExpectedEvents: map[string]int{"*": 0},
 		},
@@ -189,7 +188,6 @@ func TestSQLRun(t *testing.T) {
 			ExpectedContent: []string{
 				`"data":{}`,
 				`Raw error:`,
-				`SQL logic error`,
 			},
 			ExpectedEvents: map[string]int{"*": 0},
 		},

@@ -10,7 +10,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/pocketbase/pocketbase/tools/hook"
+	"github.com/biralo-studio/biralobase/tools/hook"
 )
 
 type EventCleanupFunc func()

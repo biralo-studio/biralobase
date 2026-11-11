@@ -66,7 +66,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pocketbase/pocketbase/tools/filesystem/blob"
+	"github.com/biralo-studio/biralobase/tools/filesystem/blob"
 )
 
 const defaultPageSize = 1000

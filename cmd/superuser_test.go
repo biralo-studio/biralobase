@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/pocketbase/pocketbase/cmd"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tests"
+	"github.com/biralo-studio/biralobase/cmd"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tests"
 )
 
 func TestSuperuserUpsertCommand(t *testing.T) {

@@ -10,9 +10,9 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/pocketbase/dbx"
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/osutils"
-	"github.com/pocketbase/pocketbase/ui"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/osutils"
+	"github.com/biralo-studio/biralobase/ui"
 )
 
 // DefaultInstallerFunc is the default PocketBase installer function.

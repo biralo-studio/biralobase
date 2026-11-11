@@ -8,9 +8,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/tools/hook"
-	"github.com/pocketbase/pocketbase/ui"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/tools/hook"
+	"github.com/biralo-studio/biralobase/ui"
 )
 
 // bindUIExtensions binds the superuser UI extensions routes to the ServeEvent.Router.

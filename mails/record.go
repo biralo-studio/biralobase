@@ -6,9 +6,9 @@ import (
 	"net/mail"
 	"slices"
 
-	"github.com/pocketbase/pocketbase/core"
-	"github.com/pocketbase/pocketbase/mails/templates"
-	"github.com/pocketbase/pocketbase/tools/mailer"
+	"github.com/biralo-studio/biralobase/core"
+	"github.com/biralo-studio/biralobase/mails/templates"
+	"github.com/biralo-studio/biralobase/tools/mailer"
 )
 
 // SendRecordAuthAlert sends a new device login alert to the specified auth record.

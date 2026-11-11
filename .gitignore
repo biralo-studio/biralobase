@@ -18,3 +18,15 @@ CHANGELOG.html
 CHANGELOG_16_22.html
 CHANGELOG_8_15.html
 LICENSE.html
+
+# Biralobase local artifacts and secrets
+/bin/
+/bb_data/
+/pb_data/
+/releases/
+**/node_modules/
+**/.dart_tool/
+.env
+/secrets/
+
+.artifacts/
