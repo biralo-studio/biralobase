@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -198,5 +199,119 @@ func TestNotifyWatcher_CollectionsUpdate(t *testing.T) {
 		if query != expectedQuery {
 			t.Fatalf("Expected query\n%s\ngot\n%s", expectedQuery, query)
 		}
+	}
+}
+
+// A settings change and a collection change from another instance can land in
+// the same debounce window. Both caches must be refreshed; remembering only
+// the most recent signal silently leaves the other one stale.
+func TestNotifyWatcher_SettingsAndCollectionsTogether(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "pb_notify_test*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	app1 := core.NewBaseApp(core.BaseAppConfig{DataDir: tmpDir})
+	if err := app1.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app1.ClearBootstrap()
+
+	app2 := core.NewBaseApp(core.BaseAppConfig{DataDir: tmpDir})
+	if err := app2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app2.ClearBootstrap()
+
+	settingsReloaded := make(chan struct{}, 8)
+	app2.OnSettingsReload().BindFunc(func(e *core.SettingsReloadEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		settingsReloaded <- struct{}{}
+		return nil
+	})
+
+	// The settings signal follows the collection signal within the window.
+	if err := app1.Save(core.NewBaseCollection("together")); err != nil {
+		t.Fatal(err)
+	}
+	app1.Settings().SuperuserIPs = []string{"127.0.0.1"}
+	if err := app1.Save(app1.Settings()); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case <-settingsReloaded:
+	case <-time.After(3 * time.Second):
+		t.Fatal("app2 did not reload settings after both changed together")
+	}
+	// The collection cache is refreshed after the settings in the same pass.
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, err := app2.FindCachedCollectionByNameOrId("together"); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("app2 did not reload cached collections after both changed together")
+		}
+	}
+}
+
+// Reload hooks run application code, which may restart the process. Restart
+// runs the terminate hooks on the goroutine that is delivering the
+// notification; closing the watcher there must not wait for that goroutine.
+// Otherwise the restart never happens and a later shutdown hangs as well.
+func TestNotifyWatcher_ReloadHookMayTerminate(t *testing.T) {
+	t.Parallel()
+
+	tmpDir, err := os.MkdirTemp("", "pb_notify_test*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	app1 := core.NewBaseApp(core.BaseAppConfig{DataDir: tmpDir})
+	if err := app1.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app1.ClearBootstrap()
+
+	app2 := core.NewBaseApp(core.BaseAppConfig{DataDir: tmpDir})
+	if err := app2.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+
+	terminated := make(chan error, 1)
+	var once sync.Once
+	app2.OnSettingsReload().BindFunc(func(e *core.SettingsReloadEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		once.Do(func() {
+			// The hooks that Restart triggers, without replacing the test process.
+			terminated <- app2.OnTerminate().Trigger(&core.TerminateEvent{App: app2, IsRestart: true})
+		})
+		return nil
+	})
+
+	app1.Settings().SuperuserIPs = []string{"127.0.0.1"}
+	if err := app1.Save(app1.Settings()); err != nil {
+		t.Fatal(err)
+	}
+
+	select {
+	case err := <-terminated:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		// app2 is deliberately not cleaned up: its watcher is waiting for itself.
+		t.Fatal("terminating from a reload hook deadlocked the notification watcher")
+	}
+	if err := app2.ClearBootstrap(); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -1,10 +1,14 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/biralo-studio/biralobase/tools/hook"
@@ -19,12 +23,33 @@ const systemHookIdNotifyWatcher = "__pbNotifyWatcherSystemHook__"
 type notifyDirWatcher struct {
 	*fsnotify.Watcher
 	done chan struct{}
+	// goroutine that delivers notifications and runs their reload hooks
+	deliverer atomic.Uint64
 }
 
 func (w *notifyDirWatcher) Close() error {
 	err := w.Watcher.Close()
+	// A reload hook may itself clear or restart the application. That call
+	// arrives on the delivering goroutine, which cannot wait for its own exit;
+	// it stops as soon as the hook returns.
+	if w.deliverer.Load() == goroutineID() {
+		return err
+	}
 	<-w.done // no notification may read app database handles after cleanup
 	return err
+}
+
+// goroutineID identifies the calling goroutine. The runtime has no accessor
+// for it; the "goroutine N [state]:" header of a stack trace is the stable way
+// to read it. Zero is never a valid identifier.
+func goroutineID() uint64 {
+	var header [64]byte
+	fields := bytes.Fields(header[:runtime.Stack(header[:], false)])
+	if len(fields) < 2 {
+		return 0
+	}
+	id, _ := strconv.ParseUint(string(fields[1]), 10, 64)
+	return id
 }
 
 func (app *BaseApp) registerNotifyWatcherHooks() {
@@ -167,7 +192,9 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 
 	var debounceTimer *time.Timer
 	var debounce <-chan time.Time
-	var pending fsnotify.Event
+	// Signals of both kinds can arrive within one debounce window; remember
+	// each kind rather than only the most recent event.
+	var settingsPending, collectionsPending bool
 	wrapped := &notifyDirWatcher{Watcher: watcher, done: make(chan struct{})}
 
 	stopDebounceTimer := func() {
@@ -182,6 +209,7 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 	routine.FireAndForget(func() {
 		defer close(wrapped.done)
 		defer stopDebounceTimer()
+		wrapped.deliverer.Store(goroutineID())
 
 		for {
 			select {
@@ -195,35 +223,41 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 					continue
 				}
 
-				stopDebounceTimer()
+				filename := filepath.Base(event.Name)
+				switch {
+				case strings.HasPrefix(filename, "settings@"):
+					settingsPending = true
+				case strings.HasPrefix(filename, "collections@"):
+					collectionsPending = true
+				default:
+					continue
+				}
 
-				pending = event
+				stopDebounceTimer()
 				debounceTimer = time.NewTimer(50 * time.Millisecond)
 				debounce = debounceTimer.C
 			case <-debounce:
 				stopDebounceTimer()
-				filename := filepath.Base(pending.Name)
+				reloadSettings, reloadCollections := settingsPending, collectionsPending
+				settingsPending, collectionsPending = false, false
 
-				// settings changed
-				if strings.HasPrefix(filename, "settings@") {
+				if reloadSettings && app.IsBootstrapped() {
 					app.Logger().Debug("Reloading settings after notify event")
 
 					err := app.ReloadSettings()
 					if err != nil {
 						app.Logger().Warn("Failed to reload app settings after notify", "error", err)
 					}
-					continue
 				}
 
-				// collections changed
-				if strings.HasPrefix(filename, "collections@") {
+				// a settings reload hook may have cleared the bootstrap
+				if reloadCollections && app.IsBootstrapped() {
 					app.Logger().Debug("Reloading cached collections after notify event")
 
 					err := app.ReloadCachedCollections()
 					if err != nil {
 						app.Logger().Warn("Failed to reload cached collections after notify", "error", err)
 					}
-					continue
 				}
 			case err, ok := <-watcher.Errors:
 				if app.IsDev() && err != nil {
