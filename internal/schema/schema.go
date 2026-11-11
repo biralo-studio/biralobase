@@ -211,6 +211,18 @@ func Snapshot(app core.App) ([]map[string]any, error) {
 		delete(item, "created")
 		delete(item, "updated")
 		stripSecrets(item)
+		if c.IsView() {
+			// PocketBase regenerates random _clone_ IDs for aliased source
+			// fields whenever a view is saved. Views have no stored field data
+			// to rename, so use the output column name as their stable identity
+			// in Git snapshots. Leave the upstream API representation unchanged.
+			if fields, ok := item["fields"].([]any); ok {
+				for _, raw := range fields {
+					field := raw.(map[string]any)
+					field["id"] = "view_" + Hash(field["name"])[:16]
+				}
+			}
+		}
 		result = append(result, item)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i]["id"].(string) < result[j]["id"].(string) })

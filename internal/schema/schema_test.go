@@ -355,3 +355,69 @@ func TestWriteNoTemporaryFiles(t *testing.T) {
 		t.Fatal("temporary file leaked")
 	}
 }
+
+func TestViewSchemaGenerationIsDeterministicAndDeployable(t *testing.T) {
+	root, _ := newSchemaProject(t)
+	app, cleanup, err := Sandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	s, err := Read(filepath.Join(root, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = Import(app, s.Collections); err != nil {
+		t.Fatal(err)
+	}
+	v := core.NewViewCollection("note_titles")
+	v.ViewQuery = "SELECT id,title AS headline,title AS duplicate FROM notes"
+	if err = app.Save(v); err != nil {
+		t.Fatal(err)
+	}
+	s.Collections, err = Snapshot(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = Write(filepath.Join(root, FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Generate(root, false); err != nil {
+		t.Fatal(err)
+	}
+	if err = Check(root); err != nil {
+		t.Fatalf("generated view migration cannot replay: %v", err)
+	}
+	for i := 0; i < 3; i++ {
+		if name, err := Generate(root, false); err != nil || name != "" {
+			t.Fatalf("unchanged view generated migration %q: %v", name, err)
+		}
+	}
+	for _, engine := range []string{"sqlite", "turso"} {
+		t.Run(engine, func(t *testing.T) {
+			config := core.BaseAppConfig{DataDir: t.TempDir()}
+			if engine == "turso" {
+				config.DBConnect = new(turso.Engine).Connect
+			}
+			target := core.NewBaseApp(config)
+			if err := target.Bootstrap(); err != nil {
+				t.Fatal(err)
+			}
+			defer target.ClearBootstrap()
+			desired, err := Read(filepath.Join(root, FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ms, err := ReadMigrations(filepath.Join(root, "migrations"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = Apply(target, desired, ms); err != nil {
+				t.Fatal(err)
+			}
+			if err = Apply(target, desired, ms); err != nil {
+				t.Fatalf("view drift after restart: %v", err)
+			}
+		})
+	}
+}
