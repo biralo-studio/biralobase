@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,7 +10,112 @@ import (
 
 	"github.com/biralo-studio/biralobase/core"
 	"github.com/biralo-studio/biralobase/storage/turso"
+	"github.com/biralo-studio/biralobase/tools/archive"
+	"github.com/pocketbase/dbx"
+	_ "modernc.org/sqlite"
 )
+
+func TestTursoBackupPreservesPhysicalSchemaIdentity(t *testing.T) {
+	root, s := newSchemaProject(t)
+	ms, err := ReadMigrations(filepath.Join(root, "migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	// Start with an existing SQLite application. Fresh Turso schemas already
+	// use its formatter and would miss the real application's restore failure.
+	app := core.NewBaseApp(core.BaseAppConfig{DataDir: dir, DBConnect: func(path string) (*dbx.DB, error) {
+		return dbx.Open("sqlite", path+"?_pragma=journal_mode(WAL)")
+	}})
+	if err = app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	if err = Apply(app, s, ms); err != nil {
+		t.Fatal(err)
+	}
+	if err = app.ClearBootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	app = core.NewBaseApp(core.BaseAppConfig{DataDir: dir, DBConnect: new(turso.Engine).Connect})
+	if err = app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app.ClearBootstrap()
+	if err = Apply(app, s, ms); err != nil {
+		t.Fatal(err)
+	}
+	if err = app.CreateBackup(context.Background(), "identity.zip"); err != nil {
+		t.Fatal(err)
+	}
+	restoredDir := t.TempDir()
+	if err = archive.Extract(filepath.Join(app.DataDir(), "backups", "identity.zip"), restoredDir); err != nil {
+		t.Fatal(err)
+	}
+	restored := core.NewBaseApp(core.BaseAppConfig{DataDir: restoredDir, DBConnect: new(turso.Engine).Connect})
+	if err = restored.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer restored.ClearBootstrap()
+	if err = Apply(restored, s, ms); err != nil {
+		t.Fatalf("valid backup rejected as drift: %v", err)
+	}
+}
+
+func TestLegacyPhysicalFingerprintUpgradeRequiresExactMatch(t *testing.T) {
+	root, s := newSchemaProject(t)
+	ms, err := ReadMigrations(filepath.Join(root, "migrations"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	app, cleanup, err := Sandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if err = Apply(app, s, ms); err != nil {
+		t.Fatal(err)
+	}
+	p := new(core.Param)
+	if err = app.ModelQuery(p).Model(stateKey, p); err != nil {
+		t.Fatal(err)
+	}
+	var state State
+	if err = json.Unmarshal(p.Value, &state); err != nil {
+		t.Fatal(err)
+	}
+	state.PhysicalVersion = 0
+	state.Physical, err = physicalSchemaVersion(app, s, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Value = append([]byte(nil), legacy...)
+	if err = app.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	if err = Apply(app, s, ms); err != nil {
+		t.Fatal(err)
+	}
+	if err = app.ModelQuery(p).Model(stateKey, p); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(p.Value, &state); err != nil || state.PhysicalVersion != 1 {
+		t.Fatal("legacy fingerprint was not upgraded", err)
+	}
+	p.Value = append([]byte(nil), legacy...)
+	if err = app.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = app.DB().NewQuery("ALTER TABLE notes ADD COLUMN undocumented TEXT").Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if err = Apply(app, s, ms); err == nil || !strings.Contains(err.Error(), "physical") {
+		t.Fatal("legacy upgrade accepted physical drift", err)
+	}
+}
 
 func newSchemaProject(t *testing.T) (string, Schema) {
 	t.Helper()

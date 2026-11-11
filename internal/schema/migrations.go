@@ -29,9 +29,10 @@ type Applied struct {
 	Checksum string `json:"checksum"`
 }
 type State struct {
-	Schema   Schema            `json:"schema"`
-	History  []Applied         `json:"history"`
-	Physical map[string]string `json:"physical,omitempty"`
+	Schema          Schema            `json:"schema"`
+	History         []Applied         `json:"history"`
+	Physical        map[string]string `json:"physical,omitempty"`
+	PhysicalVersion int               `json:"physicalVersion,omitempty"`
 }
 
 const stateKey = "biralobase_schema_state"
@@ -187,7 +188,10 @@ func plan(app core.App, desired Schema, migrations []Migration, development bool
 		return state, p, errors.New("database schema drift detected; export and reconcile before deployment")
 	}
 	if !development && state.Physical != nil {
-		physical, physicalErr := physicalSchema(app, state.Schema)
+		if state.PhysicalVersion < 0 || state.PhysicalVersion > 1 {
+			return state, p, errors.New("unsupported physical schema fingerprint version")
+		}
+		physical, physicalErr := physicalSchemaVersion(app, state.Schema, state.PhysicalVersion)
 		if physicalErr != nil {
 			return state, p, physicalErr
 		}
@@ -238,6 +242,7 @@ func ReconcileDevelopment(app core.App, desired Schema, migrations []Migration) 
 	}
 	state.Schema = desired
 	state.Physical, err = physicalSchema(app, desired)
+	state.PhysicalVersion = 1
 	if err != nil {
 		return err
 	}
@@ -250,9 +255,12 @@ func ReconcileDevelopment(app core.App, desired Schema, migrations []Migration) 
 }
 
 func applyPending(app core.App, state State, p *core.Param, migrations []Migration) error {
-	if p.IsNew() && len(migrations) == 0 {
+	// Upgrade legacy fingerprints only after plan verified their exact hashes.
+	// A restored legacy backup with a mismatched hash still fails closed.
+	if (p.IsNew() && len(migrations) == 0) || (!p.IsNew() && state.PhysicalVersion == 0) {
 		var err error
 		state.Physical, err = physicalSchema(app, state.Schema)
+		state.PhysicalVersion = 1
 		if err != nil {
 			return err
 		}
@@ -280,7 +288,7 @@ func applyPending(app core.App, state State, p *core.Param, migrations []Migrati
 			if Hash(actual) != Hash(m.To.Collections) {
 				return errors.New("migration result differs from committed schema")
 			}
-			next := State{Schema: m.To, History: append(append([]Applied{}, state.History...), Applied{Sequence: m.Sequence, Checksum: Hash(m)})}
+			next := State{Schema: m.To, PhysicalVersion: 1, History: append(append([]Applied{}, state.History...), Applied{Sequence: m.Sequence, Checksum: Hash(m)})}
 			next.Physical, err = physicalSchema(tx, m.To)
 			if err != nil {
 				return err
@@ -305,6 +313,10 @@ func applyPending(app core.App, state State, p *core.Param, migrations []Migrati
 }
 
 func physicalSchema(app core.App, s Schema) (map[string]string, error) {
+	return physicalSchemaVersion(app, s, 1)
+}
+
+func physicalSchemaVersion(app core.App, s Schema, version int) (map[string]string, error) {
 	result := map[string]string{}
 	for _, c := range s.Collections {
 		var rows []struct {
@@ -318,6 +330,22 @@ func physicalSchema(app core.App, s Schema) (map[string]string, error) {
 		}
 		if len(rows) == 0 {
 			return nil, fmt.Errorf("physical database schema drift: missing %s", c["name"])
+		}
+		if version == 1 {
+			for i := range rows {
+				// Turso also folds catalog index names during VACUUM. SQLite
+				// object names are case insensitive, unlike string literals.
+				rows[i].Name = strings.ToLower(rows[i].Name)
+				if rows[i].SQL.Valid {
+					rows[i].SQL.String = Hash(sqlTokens(rows[i].SQL.String))
+				}
+			}
+			sort.Slice(rows, func(i, j int) bool {
+				if rows[i].Type != rows[j].Type {
+					return rows[i].Type < rows[j].Type
+				}
+				return rows[i].Name < rows[j].Name
+			})
 		}
 		result[c["id"].(string)] = Hash(rows)
 	}
