@@ -34,7 +34,7 @@ func (w *Worker) BindHTTP(routes *router.Router[*core.RequestEvent], api http.Ha
 			value, err := w.Invoke(e.Request.Context(), "function", name, map[string]any{
 				"request": map[string]any{"method": e.Request.Method, "url": e.Request.URL.String(), "headers": headers, "body": requestBody},
 				"auth":    auth, "admin": e.App,
-				"api": recordapi.New(api, e.Request.Context(), e.Request.Header.Get("Authorization"), e.Request.RemoteAddr),
+				"api": recordapi.New(api, e.Request.Context(), e.Request.Header.Get("Authorization"), recordapi.PeerAddress(e.App, e.Request)),
 			})
 			if err != nil {
 				return err

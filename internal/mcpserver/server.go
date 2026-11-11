@@ -52,7 +52,7 @@ func New(auth *oauth.Server, desired schema.Schema, api http.Handler) (http.Hand
 				name += "_" + action
 				destructive, openWorld := action == "delete" || action == "update", false
 				server.AddTool(&mcp.Tool{Name: name, Description: exposure.Description + " (" + action + ")", InputSchema: inputSchema(action, exposure.Fields), Annotations: &mcp.ToolAnnotations{ReadOnlyHint: action == "get" || action == "list", DestructiveHint: &destructive, OpenWorldHint: &openWorld}}, func(ctx context.Context, call *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-					result, err := execute(ctx, api, principal, id, action, exposure.Fields, call.Params.Arguments, r.RemoteAddr)
+					result, err := execute(ctx, api, principal, id, action, exposure.Fields, call.Params.Arguments, recordapi.PeerAddress(auth.App, r))
 					if err != nil {
 						return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: err.Error()}}}, nil
 					}

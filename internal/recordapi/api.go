@@ -7,10 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"regexp"
+
+	"github.com/biralo-studio/biralobase/core"
 )
 
 var recordPath = regexp.MustCompile(`^/api/collections/[a-zA-Z0-9_]+/records(?:/[a-zA-Z0-9_]+)?$`)
@@ -24,6 +27,14 @@ type Client struct {
 
 func New(handler http.Handler, ctx context.Context, token, remoteAddr string) *Client {
 	return &Client{handler: handler, context: ctx, token: token, remoteAddr: remoteAddr}
+}
+
+// PeerAddress preserves PocketBase's resolved client IP when an internal
+// request no longer carries proxy headers. Hooks and rate limits must not
+// accidentally see the shared reverse-proxy address instead of the caller.
+func PeerAddress(app core.App, request *http.Request) string {
+	e := &core.RequestEvent{App: app, Request: request}
+	return net.JoinHostPort(e.RealIP(), "0")
 }
 
 type Response struct {
