@@ -15,7 +15,59 @@ import (
 	"github.com/biralo-studio/biralobase/apis"
 	"github.com/biralo-studio/biralobase/core"
 	"github.com/biralo-studio/biralobase/internal/schema"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
+
+func TestHTTPFunctionPreservesAuthJSONFields(t *testing.T) {
+	app, cleanup, err := schema.Sandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	c := core.NewAuthCollection("json_users")
+	c.Fields.Add(&core.JSONField{Name: "profile"})
+	if err = app.Save(c); err != nil {
+		t.Fatal(err)
+	}
+	r := core.NewRecord(c)
+	r.SetEmail("json@example.com")
+	r.SetPassword("test-password-123")
+	r.Set("profile", types.JSONRaw(`{"$ref":"1","nested":[{"$map":{"$ref":"2"}}],"enabled":true}`))
+	if err = app.Save(r); err != nil {
+		t.Fatal(err)
+	}
+	token, err := r.NewAuthToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := startTestWorker(t, `export default {functions:{profile:async ctx=>({body:ctx.auth.profile})}}`)
+	routes, err := apis.NewRouter(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.BindHTTP(routes, nil)
+	handler, err := routes.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("GET", "/api/functions/profile", nil)
+	request.Header.Set("Authorization", token)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != 200 {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body)
+	}
+	var got, want any
+	if err = json.Unmarshal(response.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(r.Get("profile").(types.JSONRaw), &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("JSON changed across bridge: %v", got)
+	}
+}
 
 func TestDisconnectedHTTPCallerDoesNotKillSharedWorker(t *testing.T) {
 	app, cleanup, err := schema.Sandbox()

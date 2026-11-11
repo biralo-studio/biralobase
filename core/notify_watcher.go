@@ -7,17 +7,28 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fatih/color"
-	"github.com/fsnotify/fsnotify"
 	"github.com/biralo-studio/biralobase/tools/hook"
 	"github.com/biralo-studio/biralobase/tools/routine"
 	"github.com/biralo-studio/biralobase/tools/security"
+	"github.com/fatih/color"
+	"github.com/fsnotify/fsnotify"
 )
 
 const systemHookIdNotifyWatcher = "__pbNotifyWatcherSystemHook__"
 
+type notifyDirWatcher struct {
+	*fsnotify.Watcher
+	done chan struct{}
+}
+
+func (w *notifyDirWatcher) Close() error {
+	err := w.Watcher.Close()
+	<-w.done // no notification may read app database handles after cleanup
+	return err
+}
+
 func (app *BaseApp) registerNotifyWatcherHooks() {
-	var notifyWatcher *fsnotify.Watcher
+	var notifyWatcher *notifyDirWatcher
 
 	instanceId := "@" + security.PseudorandomString(10)
 
@@ -46,6 +57,16 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 			return nil
 		},
 		Priority: -998,
+	})
+	app.OnBootstrapClear().Bind(&hook.Handler[*BootstrapEvent]{
+		Id:       systemHookIdNotifyWatcher,
+		Priority: -998,
+		Func: func(e *BootstrapEvent) error {
+			if notifyWatcher != nil {
+				_ = notifyWatcher.Close()
+			}
+			return e.Next()
+		},
 	})
 
 	// cleanup
@@ -126,7 +147,7 @@ func (app *BaseApp) registerNotifyWatcherHooks() {
 	})
 }
 
-func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath string) (*fsnotify.Watcher, error) {
+func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath string) (*notifyDirWatcher, error) {
 	// create the notify dir (if not already)
 	err := os.MkdirAll(localNotifyDirPath, os.ModePerm)
 	if err != nil {
@@ -145,16 +166,21 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 	}
 
 	var debounceTimer *time.Timer
+	var debounce <-chan time.Time
+	var pending fsnotify.Event
+	wrapped := &notifyDirWatcher{Watcher: watcher, done: make(chan struct{})}
 
 	stopDebounceTimer := func() {
 		if debounceTimer != nil {
 			debounceTimer.Stop()
 			debounceTimer = nil
 		}
+		debounce = nil
 	}
 
 	// watch
 	routine.FireAndForget(func() {
+		defer close(wrapped.done)
 		defer stopDebounceTimer()
 
 		for {
@@ -171,31 +197,34 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 
 				stopDebounceTimer()
 
-				debounceTimer = time.AfterFunc(50*time.Millisecond, func() {
-					filename := filepath.Base(event.Name)
+				pending = event
+				debounceTimer = time.NewTimer(50 * time.Millisecond)
+				debounce = debounceTimer.C
+			case <-debounce:
+				stopDebounceTimer()
+				filename := filepath.Base(pending.Name)
 
-					// settings changed
-					if strings.HasPrefix(filename, "settings@") {
-						app.Logger().Debug("Reloading settings after notify event")
+				// settings changed
+				if strings.HasPrefix(filename, "settings@") {
+					app.Logger().Debug("Reloading settings after notify event")
 
-						err := app.ReloadSettings()
-						if err != nil {
-							app.Logger().Warn("Failed to reload app settings after notify", "error", err)
-						}
-						return
+					err := app.ReloadSettings()
+					if err != nil {
+						app.Logger().Warn("Failed to reload app settings after notify", "error", err)
 					}
+					continue
+				}
 
-					// collections changed
-					if strings.HasPrefix(filename, "collections@") {
-						app.Logger().Debug("Reloading cached collections after notify event")
+				// collections changed
+				if strings.HasPrefix(filename, "collections@") {
+					app.Logger().Debug("Reloading cached collections after notify event")
 
-						err := app.ReloadCachedCollections()
-						if err != nil {
-							app.Logger().Warn("Failed to reload cached collections after notify", "error", err)
-						}
-						return
+					err := app.ReloadCachedCollections()
+					if err != nil {
+						app.Logger().Warn("Failed to reload cached collections after notify", "error", err)
 					}
-				})
+					continue
+				}
 			case err, ok := <-watcher.Errors:
 				if app.IsDev() && err != nil {
 					color.Red("Notify dir watch error:", err)
@@ -208,5 +237,5 @@ func createNotifyDirWatcher(app App, instanceId string, localNotifyDirPath strin
 		}
 	})
 
-	return watcher, err
+	return wrapped, err
 }

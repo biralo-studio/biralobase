@@ -3,11 +3,13 @@ package runtime_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -18,6 +20,61 @@ import (
 	server "github.com/biralo-studio/biralobase/internal/runtime"
 	"github.com/biralo-studio/biralobase/internal/schema"
 )
+
+func TestBackupRestoreKeepsTheDataDirectoryLocked(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "app")
+	s, err := schema.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Write(filepath.Join(source, schema.FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	c := provision.Config{AppDir: source, DataDir: filepath.Join(root, "data"), HTTP: "127.0.0.1:0", Dev: true}
+	srv, err := server.Open(context.Background(), c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	if err = srv.App.CreateBackup(context.Background(), "restore-lock.zip"); err != nil {
+		t.Fatal(err)
+	}
+	lockPath := filepath.Join(c.DataDir, ".biralobase.lock")
+	original, err := os.Stat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	interrupted := errors.New("interrupt test process restart")
+	checked := false
+	srv.App.OnTerminate().BindFunc(func(e *core.TerminateEvent) error {
+		if !e.IsRestart {
+			return e.Next()
+		}
+		checked = true
+		current, statErr := os.Stat(lockPath)
+		if statErr != nil || !os.SameFile(original, current) {
+			t.Error("restore replaced or removed the held lock inode")
+		}
+		f, openErr := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0600)
+		if openErr != nil {
+			t.Error(openErr)
+		} else {
+			defer f.Close()
+			if syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+				syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+				t.Error("second process can acquire data-directory ownership during restore")
+			}
+		}
+		return interrupted
+	})
+	if err = srv.App.RestoreBackup(context.Background(), "restore-lock.zip"); !errors.Is(err, interrupted) {
+		t.Fatalf("restore failed before restart probe: %v", err)
+	}
+	if !checked {
+		t.Fatal("restore did not reach restart probe")
+	}
+}
 
 func TestServeShutdownRunsAsyncTerminateHook(t *testing.T) {
 	root := t.TempDir()

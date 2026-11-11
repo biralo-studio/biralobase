@@ -30,3 +30,4 @@ LICENSE.html
 /secrets/
 
 .artifacts/
+__pycache__/

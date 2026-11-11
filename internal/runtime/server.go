@@ -183,6 +183,13 @@ func Open(ctx context.Context, config provision.Config) (_ *Server, err error) {
 		e.Exclude = append(e.Exclude, ".biralobase.lock")
 		return e.Next()
 	})
+	app.OnBackupRestore().BindFunc(func(e *core.BackupEvent) error {
+		// Keep ownership of the same inode while core swaps the data files.
+		// Moving the lock into the old-data directory would permit a second
+		// process to acquire a new lock before this process has restarted.
+		e.Exclude = append(e.Exclude, ".biralobase.lock")
+		return e.Next()
+	})
 	app.OnServe().BindFunc(func(e *core.ServeEvent) error {
 		e.InstallerFunc = nil
 		server.Bind(e.Router)

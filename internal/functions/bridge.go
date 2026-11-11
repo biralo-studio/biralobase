@@ -34,17 +34,26 @@ func (s *scope) export(value any) any {
 			value = &Admin{App: app}
 		}
 	}
-	if raw, ok := value.(json.RawMessage); ok {
-		var v any
-		_ = json.Unmarshal(raw, &v)
-		return s.export(v)
-	}
 	v := reflect.ValueOf(value)
 	for v.Kind() == reflect.Interface {
 		if v.IsNil() {
 			return nil
 		}
 		v = v.Elem()
+	}
+	// JSON fields use named byte slices (including types.JSONRaw and
+	// jsontext.Value). Marshal their value before adding wire envelopes;
+	// returning the slice directly bypasses map tagging and can turn user
+	// "$ref" keys into bridge references. Pointers remain live Go objects.
+	if v.Kind() != reflect.Pointer {
+		if marshaler, ok := value.(json.Marshaler); ok {
+			raw, err := marshaler.MarshalJSON()
+			var plain any
+			if err != nil || json.Unmarshal(raw, &plain) != nil {
+				return nil
+			}
+			return s.export(plain)
+		}
 	}
 	switch v.Kind() {
 	case reflect.Pointer:
