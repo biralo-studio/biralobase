@@ -77,6 +77,8 @@ Shutdown waits for a running job for up to two minutes. `deploy/compose.yaml` al
 | --- | --- |
 | Native Linux matrix, runtime `4acec28c` | **Passed**: run `43115472902`, amd64 and arm64, both engines, race, fuzz, vulnerabilities, SDKs, containers |
 | Native Linux matrix, `da6ad4f5` (adds the soak changes; the commit the images are built from) | **Passed**: run `43120200389` |
+| Native Linux matrix, `89302606` (documentation only) | **Failed in one job**: run `43121398608`, `test (ubuntu-24.04, turso)`. The inherited `TestRealtimeRecordResolve` collected events for a fixed 250 ms that started before three durable writes; the same code passed in the two runs above. Made independent of write latency in `ac0fb382` |
+| Native Linux matrix, later commits | Not recorded here: `gh run list --branch review/second-reviewer` |
 | `main` at `3a8be03c` (runtime `4d7b3f0a`) | Passed: run `43098720205` |
 | Linux amd64 6h and 24h soaks | Running on storage source `5d9a8dce`. They no longer qualify the patched adapter. At 3.5 hours they held 795 MB and 735 MB of a 1 GiB limit with a 16 KB database |
 | macOS arm64 24h soak | **Failed at 2h31m** with `no storage space`: the workstation disk filled during this review. Not a storage verdict. Restarted on `da6ad4f5` at 2026-11-11 23:30 UTC; see `.artifacts/reviewer2-soak-arm64-24h.json` |
