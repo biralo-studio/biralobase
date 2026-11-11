@@ -44,19 +44,14 @@ container=$(docker run -d --read-only --cap-drop ALL --security-opt no-new-privi
   -e BIRALOBASE_ADMIN_EMAIL=admin@example.com \
   -e BIRALOBASE_ADMIN_PASSWORD_FILE=/run/secrets/admin_password \
   -e BIRALOBASE_ENCRYPTION_KEY_FILE=/run/secrets/encryption_key "$runtime_image")
-binding=$(docker port "$container" 8090/tcp)
-base="http://127.0.0.1:${binding##*:}"
+set_base() {
+  local binding
+  binding=$(docker port "$container" 8090/tcp)
+  base="http://127.0.0.1:${binding##*:}"
+}
+set_base
 get() {
-  if [ "$(uname -s)" = Darwin ]; then
-    # Check the container directly when the local VM's port forwarder is not
-    # available. Linux CI additionally verifies the published host endpoint.
-    docker exec "$container" node --input-type=module -e '
-      const r=await fetch(process.argv[1],{signal:AbortSignal.timeout(3000)});
-      if(!r.ok)process.exit(1);process.stdout.write(await r.text());
-    ' "http://127.0.0.1:8090$1"
-  else
-    curl --connect-timeout 1 --max-time 3 -fsS "$base$1"
-  fi
+  curl --noproxy '*' --connect-timeout 1 --max-time 3 -fsS "$base$1"
 }
 ready() {
   for attempt in {1..120}; do
@@ -64,6 +59,7 @@ ready() {
     if [ "$(docker inspect --format '{{.State.Running}}' "$container")" != true ]; then break; fi
     sleep 1
   done
+  get /api/biralobase/ready || true
   docker logs "$container"
   return 1
 }
@@ -73,7 +69,11 @@ docker run --rm -v "$scratch:/test:ro" "$builder_image" node -e '
   const fs=require("node:fs");if(JSON.parse(fs.readFileSync("/test/hello.json")).message!=="Hello from Biralobase")process.exit(1)
 '
 test "$(docker exec "$container" id -u)" = 10001
-docker restart "$container" >/dev/null
+docker stop --time 30 "$container" >/dev/null
+test "$(docker inspect --format '{{.State.ExitCode}}' "$container")" = 0
+docker start "$container" >/dev/null
+# Docker may reassign an ephemeral published port after a stop/start.
+set_base
 ready
 get /api/functions/hello >/dev/null
 echo 'Non-root, read-only container and persistent restart passed'

@@ -3,11 +3,13 @@ package runtime_test
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/biralo-studio/biralobase/apis"
 	"github.com/biralo-studio/biralobase/core"
@@ -16,6 +18,65 @@ import (
 	server "github.com/biralo-studio/biralobase/internal/runtime"
 	"github.com/biralo-studio/biralobase/internal/schema"
 )
+
+func TestServeShutdownRunsAsyncTerminateHook(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "app")
+	s, err := schema.Default()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = schema.Write(filepath.Join(source, schema.FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.MkdirAll(filepath.Join(source, "functions/dist"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(source, "package.json"), []byte(`{"type":"module"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(source, "functions/dist/index.js"), []byte(`import {writeFile} from 'node:fs/promises'; export default {hooks:[{event:'OnTerminate',handler:async e=>{await writeFile(process.env.BIRALOBASE_FUNCTION_SHUTDOWN_MARKER,'completed');await e.next();}}]};`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(root, "shutdown")
+	t.Setenv("BIRALOBASE_FUNCTION_SHUTDOWN_MARKER", marker)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	srv, err := server.Open(ctx, provision.Config{AppDir: source, DataDir: filepath.Join(root, "data"), HTTP: "127.0.0.1:0", Dev: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer srv.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	ready := make(chan struct{})
+	srv.App.OnServe().BindFunc(func(e *core.ServeEvent) error { e.Listener = listener; err := e.Next(); close(ready); return err })
+	done := make(chan error, 1)
+	go func() { done <- srv.Serve(ctx) }()
+	select {
+	case <-ready:
+	case err := <-done:
+		t.Fatalf("serve exited early: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("serve did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("graceful shutdown timed out")
+	}
+	content, err := os.ReadFile(marker)
+	if err != nil || string(content) != "completed" {
+		t.Fatal("terminate hook was skipped", err)
+	}
+}
 
 func TestImmutableStartupMigrationFunctionsProvisioningAndRestart(t *testing.T) {
 	root := t.TempDir()

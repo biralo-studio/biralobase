@@ -54,17 +54,26 @@ jobs:
         run: |
           ./scripts/test-dart-sdk.sh
           BIRALOBASE_TEST_MODE=dev ./scripts/test-dart-sdk.sh
-      - name: Container build
-        if: matrix.engine == 'turso'
+  container:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build images and verify deployment
         run: |
           docker build --target runtime -t biralobase:ci .
           docker build --target builder -t biralobase-builder:ci .
           ./scripts/test-container.sh
   gate:
-    needs: test
+    needs: [test, container]
     runs-on: ubuntu-24.04
     if: always()
     steps:
       - env:
-          RESULT: ${{ needs.test.result }}
-        run: test "$RESULT" = success
+          TEST_RESULT: ${{ needs.test.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: test "$TEST_RESULT" = success && test "$CONTAINER_RESULT" = success
