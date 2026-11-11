@@ -112,7 +112,9 @@ func TestStorageSoak(t *testing.T) {
 	}
 	path := filepath.Join(t.TempDir(), "soak.db")
 	deadline := time.Now().Add(duration)
+	nextProgress := time.Now().Add(time.Minute)
 	var count atomic.Int64
+	var retained int64
 	for round := 0; time.Now().Before(deadline); round++ {
 		e := new(turso.Engine)
 		db, err := e.Connect(path)
@@ -173,14 +175,29 @@ func TestStorageSoak(t *testing.T) {
 		var stored int64
 		if err = db.DB().QueryRow("SELECT count(*) FROM workload").Scan(&stored); err != nil {
 			t.Error(err)
-		} else if stored != count.Load() {
-			t.Errorf("stored %d, acknowledged %d", stored, count.Load())
+		} else if stored != count.Load()-retained {
+			t.Errorf("stored %d, acknowledged since pruning %d", stored, count.Load()-retained)
+		}
+		// Keep a bounded working set during 6/24-hour gates. Every row is
+		// verified above before deletion; reopening still tests persistent
+		// contents on the intervening rounds. This also exercises deletion
+		// and space reuse instead of benchmarking only an ever-growing table.
+		if stored >= 10000 {
+			if _, err = db.DB().Exec("DELETE FROM workload"); err != nil {
+				t.Error(err)
+			} else {
+				retained = count.Load()
+			}
 		}
 		if err = db.Close(); err != nil {
 			t.Error(err)
 		}
 		if t.Failed() {
 			return
+		}
+		if time.Now().After(nextProgress) {
+			t.Logf("progress: writes=%d rounds=%d remaining=%s", count.Load(), round+1, time.Until(deadline).Round(time.Second))
+			nextProgress = time.Now().Add(time.Minute)
 		}
 	}
 	t.Logf("verified %d concurrent writes and rollbacks across %s", count.Load(), duration)

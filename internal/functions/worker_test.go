@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -11,9 +12,37 @@ import (
 	"testing"
 	"time"
 
+	"github.com/biralo-studio/biralobase/apis"
 	"github.com/biralo-studio/biralobase/core"
 	"github.com/biralo-studio/biralobase/internal/schema"
 )
+
+func TestDisconnectedHTTPCallerDoesNotKillSharedWorker(t *testing.T) {
+	app, cleanup, err := schema.Sandbox()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	w := startTestWorker(t, `import {setTimeout} from 'node:timers/promises'; export default {functions:{slow:async()=>{await setTimeout(50);return {body:{ok:true}}}}};`)
+	routes, err := apis.NewRouter(app)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.BindHTTP(routes, nil)
+	handler, err := routes.BuildMux()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r := httptest.NewRequest("GET", "/api/functions/slow", nil).WithContext(ctx)
+	handler.ServeHTTP(httptest.NewRecorder(), r)
+	// An unauthenticated caller must not be able to kill the worker (and
+	// consequently the whole server) by disconnecting from a function.
+	if _, err = w.Invoke(context.Background(), "function", "slow", nil); err != nil {
+		t.Fatalf("client cancellation killed shared worker: %v", err)
+	}
+}
 
 func startTestWorker(t *testing.T, code string) *Worker {
 	t.Helper()

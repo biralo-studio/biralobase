@@ -129,6 +129,90 @@ func TestMigrationHistoryAndDestructiveGuard(t *testing.T) {
 	}
 }
 
+func TestFailedMigrationRollsBackDDLDataAndHistory(t *testing.T) {
+	for _, engine := range []string{"sqlite", "turso"} {
+		t.Run(engine, func(t *testing.T) {
+			root, previous := newSchemaProject(t)
+			config := core.BaseAppConfig{DataDir: t.TempDir()}
+			if engine == "turso" {
+				config.DBConnect = new(turso.Engine).Connect
+			}
+			app := core.NewBaseApp(config)
+			if err := app.Bootstrap(); err != nil {
+				t.Fatal(err)
+			}
+			defer app.ClearBootstrap()
+			initial, err := ReadMigrations(filepath.Join(root, "migrations"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = Apply(app, previous, initial); err != nil {
+				t.Fatal(err)
+			}
+			c, err := app.FindCollectionByNameOrId("notes")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := core.NewRecord(c)
+			r.Set("title", "original")
+			if err = app.Save(r); err != nil {
+				t.Fatal(err)
+			}
+			// Read an independent copy so the pre-migration state is unchanged.
+			next, err := Read(filepath.Join(root, FileName))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, collection := range next.Collections {
+				if collection["name"] == "notes" {
+					for _, field := range collection["fields"].([]any) {
+						f := field.(map[string]any)
+						if f["id"] == "titlefield" {
+							f["name"] = "headline"
+						}
+					}
+				}
+			}
+			if err = Write(filepath.Join(root, FileName), next); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = Generate(root, false); err != nil {
+				t.Fatal(err)
+			}
+			next, _ = Read(filepath.Join(root, FileName))
+			ms, err := ReadMigrations(filepath.Join(root, "migrations"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ms[1].Before = []string{"UPDATE notes SET title='must roll back'"}
+			ms[1].After = []string{"INSERT INTO nonexistent_table VALUES ('force failure after DDL')"}
+			if err = Apply(app, next, ms); err == nil {
+				t.Fatal("injected failure was accepted")
+			}
+			if err = Apply(app, previous, initial); err != nil {
+				t.Fatalf("history or physical schema changed after rollback: %v", err)
+			}
+			stored, err := app.FindRecordById("notes", r.Id)
+			if err != nil || stored.GetString("title") != "original" {
+				t.Fatal("failed migration changed data", err)
+			}
+			c, err = app.FindCollectionByNameOrId("notes")
+			if err != nil || c.Fields.GetByName("headline") != nil {
+				t.Fatal("failed migration changed cached schema", err)
+			}
+			ms[1].Before = nil
+			ms[1].After = []string{"UPDATE notes SET headline=upper(headline)"}
+			if err = Apply(app, next, ms); err != nil {
+				t.Fatalf("corrected release could not recover: %v", err)
+			}
+			stored, err = app.FindRecordById("notes", r.Id)
+			if err != nil || stored.GetString("headline") != "ORIGINAL" {
+				t.Fatal("recovered migration lost data", err)
+			}
+		})
+	}
+}
+
 func TestSchemaExportDoesNotContainAuthSecrets(t *testing.T) {
 	s, err := Default()
 	if err != nil {
@@ -137,6 +221,44 @@ func TestSchemaExportDoesNotContainAuthSecrets(t *testing.T) {
 	b, _ := json.Marshal(s)
 	if strings.Contains(string(b), `"secret"`) || strings.Contains(string(b), `"clientSecret"`) {
 		t.Fatal("schema contains secrets")
+	}
+}
+
+func TestNarrowingMultiValueFieldRequiresDestructiveAcknowledgement(t *testing.T) {
+	root, s := newSchemaProject(t)
+	for _, c := range s.Collections {
+		if c["name"] == "notes" {
+			c["fields"] = append(c["fields"].([]any), map[string]any{"id": "tagsfield", "name": "tags", "type": "select", "values": []any{"a", "b", "c"}, "maxSelect": 3})
+		}
+	}
+	if err := Write(filepath.Join(root, FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Generate(root, false); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Read(filepath.Join(root, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range s.Collections {
+		if c["name"] == "notes" {
+			for _, v := range c["fields"].([]any) {
+				f := v.(map[string]any)
+				if f["id"] == "tagsfield" {
+					f["maxSelect"] = 1
+				}
+			}
+		}
+	}
+	if err = Write(filepath.Join(root, FileName), s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = Generate(root, false); err == nil {
+		t.Fatal("multi-value to single-value conversion accepted without destructive acknowledgement")
+	}
+	if _, err = Generate(root, true); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -96,7 +96,7 @@ func Generate(root string, allowDestructive bool) (string, error) {
 	}
 	destructive := isDestructive(previous, s)
 	if destructive && !allowDestructive {
-		return "", errors.New("schema removes fields/collections or changes field types; review intent and rerun with --allow-destructive")
+		return "", errors.New("schema removes fields/collections, changes field types, or narrows selections/relations; review intent and rerun with --allow-destructive")
 	}
 	m := Migration{Version: 1, Sequence: len(migrations) + 1, From: Hash(previous), To: s, Destructive: destructive}
 	app, cleanup, err := Sandbox()
@@ -364,23 +364,49 @@ func isDestructive(before, after Schema) bool {
 		if next == nil || next["type"] != old["type"] {
 			return true
 		}
-		fields := map[string]any{}
+		fields := map[string]map[string]any{}
 		if values, ok := next["fields"].([]any); ok {
 			for _, v := range values {
 				f := v.(map[string]any)
-				fields[f["id"].(string)] = f["type"]
+				fields[f["id"].(string)] = f
 			}
 		}
 		if values, ok := old["fields"].([]any); ok {
 			for _, v := range values {
 				f := v.(map[string]any)
-				if fields[f["id"].(string)] != f["type"] {
+				nextField := fields[f["id"].(string)]
+				if nextField == nil || nextField["type"] != f["type"] {
+					return true
+				}
+				// PocketBase converts multi-valued select/relation/file columns
+				// when maxSelect becomes 1. Field type alone cannot detect this
+				// data-losing change. Also flag narrower limits and relation targets.
+				switch f["type"] {
+				case "select", "relation", "file":
+					oldMax, newMax := selectionLimit(f), selectionLimit(nextField)
+					if newMax < oldMax {
+						return true
+					}
+				}
+				if f["type"] == "relation" && f["collectionId"] != nextField["collectionId"] {
 					return true
 				}
 			}
 		}
 	}
 	return false
+}
+
+func selectionLimit(field map[string]any) int {
+	// Normalized schema comes from JSON; accept int as well for Go callers.
+	switch n := field["maxSelect"].(type) {
+	case float64:
+		return max(1, int(n))
+	case int:
+		return max(1, n)
+	default:
+		return 1
+	}
 }
 
 func LockProductionSchema(app core.App) {

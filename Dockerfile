@@ -47,6 +47,20 @@ HEALTHCHECK --interval=10s --timeout=4s --start-period=60s CMD ["biralobase","he
 ENTRYPOINT ["biralobase"]
 CMD ["serve"]
 
+# Opt-in, reproducible stability runner; contains no application data or secrets.
+FROM compile AS qualification-compile
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go test -p 2 -c \
+    -o /out/storage.test ./storage/turso
+
+FROM runtime AS qualification
+COPY --from=qualification-compile /out/storage.test /usr/local/bin/storage.test
+HEALTHCHECK NONE
+ENTRYPOINT ["storage.test"]
+CMD ["-test.v", "-test.timeout=25h", "-test.run=TestStorageSoak|TestCrashRecovery"]
+
 # Runs on the target architecture so npm native modules match the runtime ABI.
 FROM runtime AS builder
 USER root

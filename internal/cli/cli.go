@@ -68,7 +68,7 @@ func Execute(ctx context.Context, args []string, output io.Writer) error {
 		}
 		return nil
 	}}
-	generate.Flags().BoolVar(&allowDestructive, "allow-destructive", false, "acknowledge generated field removals and type changes for review")
+	generate.Flags().BoolVar(&allowDestructive, "allow-destructive", false, "acknowledge generated removals, type changes, and narrowed selections/relations for review")
 	schemaCmd.AddCommand(generate, &cobra.Command{Use: "check", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error { return schema.Check(c.AppDir) }})
 	schemaCmd.AddCommand(&cobra.Command{Use: "export", Short: "Export local dashboard edits while the server is stopped", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error { return server.Export(c) }})
 	root.AddCommand(schemaCmd)

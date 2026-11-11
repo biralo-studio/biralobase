@@ -1,6 +1,7 @@
 package functions
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -31,7 +32,10 @@ func (w *Worker) BindHTTP(routes *router.Router[*core.RequestEvent], api http.Ha
 			headers := e.Request.Header.Clone()
 			headers.Del("Authorization")
 			headers.Del("Cookie")
-			value, err := w.Invoke(e.Request.Context(), "function", name, map[string]any{
+			// A client disconnect must not kill the shared worker and stop the
+			// server. Let trusted handler code finish under the worker's execution
+			// timeout; ctx.api still carries the original request cancellation.
+			value, err := w.Invoke(context.WithoutCancel(e.Request.Context()), "function", name, map[string]any{
 				"request": map[string]any{"method": e.Request.Method, "url": e.Request.URL.String(), "headers": headers, "body": requestBody},
 				"auth":    auth, "admin": e.App,
 				"api": recordapi.New(api, e.Request.Context(), e.Request.Header.Get("Authorization"), recordapi.PeerAddress(e.App, e.Request)),
