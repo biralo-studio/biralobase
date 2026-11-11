@@ -335,7 +335,7 @@ func physicalSchemaVersion(app core.App, s Schema, version int) (map[string]stri
 			for i := range rows {
 				// Turso also folds catalog index names during VACUUM. SQLite
 				// object names are case insensitive, unlike string literals.
-				rows[i].Name = strings.ToLower(rows[i].Name)
+				rows[i].Name = sqlFold(rows[i].Name)
 				if rows[i].SQL.Valid {
 					rows[i].SQL.String = Hash(sqlTokens(rows[i].SQL.String))
 				}

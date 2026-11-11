@@ -81,6 +81,7 @@ def main():
     parser.add_argument("--email", required=True)
     parser.add_argument("--password-file", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--ignore-auth-updated", action="store_true", help="explicitly exclude timestamps changed by copied-user credential tests")
     args = parser.parse_args()
     clients = [Client(args.reference), Client(args.candidate)]
     password = pathlib.Path(args.password_file).read_text().rstrip("\r\n")
@@ -90,6 +91,7 @@ def main():
     if set(collections[0]) != set(collections[1]):
         raise RuntimeError("application collection inventories differ")
     report = {"collections": [], "recordsCompared": 0, "filesCompared": 0, "differences": []}
+    report["excludedRecordFields"] = ["auth.updated"] if args.ignore_auth_updated else []
     file_tokens = []
     for client in clients:
         status, result = client.request("POST", "/api/files/token")
@@ -101,6 +103,10 @@ def main():
         if canonical_collection(collection) != canonical_collection(collections[1][cid]):
             report["differences"].append({"collection": name, "kind": "schema"})
         records = [client.all(f"/api/collections/{cid}/records") for client in clients]
+        if args.ignore_auth_updated and collection["type"] == "auth":
+            for rows in records:
+                for row in rows:
+                    row.pop("updated", None)
         if records[0] != records[1]:
             left, right = [{r["id"]: r for r in rows} for rows in records]
             fields = set()

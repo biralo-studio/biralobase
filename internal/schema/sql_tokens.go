@@ -2,6 +2,18 @@ package schema
 
 import "strings"
 
+// SQLite folds only ASCII identifier characters; Unicode case changes can
+// name different objects and must remain visible to the drift check.
+func sqlFold(s string) string {
+	b := []byte(s)
+	for i, c := range b {
+		if c >= 'A' && c <= 'Z' {
+			b[i] = c + ('a' - 'A')
+		}
+	}
+	return string(b)
+}
+
 // sqlTokens ignores SQL presentation changes made by Turso VACUUM INTO while
 // retaining token boundaries and every byte inside quoted literals/identifiers.
 // It is a fingerprint tokenizer, not a validator or SQL execution parser.
@@ -56,7 +68,7 @@ func sqlTokens(sql string) []string {
 			for i < len(sql) && word(sql[i]) {
 				i++
 			}
-			tokens = append(tokens, strings.ToLower(sql[start:i]))
+			tokens = append(tokens, sqlFold(sql[start:i]))
 		} else {
 			i++
 			tokens = append(tokens, sql[start:i])

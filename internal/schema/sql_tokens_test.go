@@ -3,6 +3,9 @@ package schema
 import "testing"
 
 func TestPhysicalSQLTokenNormalization(t *testing.T) {
+	if Hash(sqlTokens("SELECT Ä")) == Hash(sqlTokens("SELECT ä")) {
+		t.Fatal("Unicode identifiers were conflated")
+	}
 	base := "CREATE TABLE `notes` (id TEXT DEFAULT (lower(hex(randomblob(7)))), title TEXT DEFAULT 'Keep  Case')"
 	formatted := "create  table `notes`(id text default(lower (hex (randomblob (7)))), title text default 'Keep  Case') -- comment\n"
 	if Hash(sqlTokens(base)) != Hash(sqlTokens(formatted)) {
