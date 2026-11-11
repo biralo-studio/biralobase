@@ -1185,30 +1185,52 @@ func TestRealtimeRecordResolve(t *testing.T) {
 				notifications[clientId] = append(notifications[clientId], data.Action)
 			}
 
+			// Collect until every expected event has arrived and the clients
+			// have then stayed quiet for 250ms, so that unexpected extra events
+			// are still caught. A fixed window measured from before the
+			// operations depends on how long three durable writes take, and
+			// an event that misses it is delivered to the next scenario
+			// because the clients are shared.
+			expectedTotal := 0
+			for _, events := range s.expected {
+				expectedTotal += len(events)
+			}
+
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 
-				timeout := time.After(250 * time.Millisecond)
+				timeout := time.After(10 * time.Second)
+				var quiet <-chan time.Time
+				received := 0
+				collect := func(clientId string, eventData []byte) {
+					notify(clientId, eventData)
+					received++
+					if received >= expectedTotal {
+						quiet = time.After(250 * time.Millisecond)
+					}
+				}
 
 				for {
 					select {
 					case e, ok := <-client0.Channel():
 						if ok {
-							notify(client0.Id(), e.Data)
+							collect(client0.Id(), e.Data)
 						}
 					case e, ok := <-client1.Channel():
 						if ok {
-							notify(client1.Id(), e.Data)
+							collect(client1.Id(), e.Data)
 						}
 					case e, ok := <-client2.Channel():
 						if ok {
-							notify(client2.Id(), e.Data)
+							collect(client2.Id(), e.Data)
 						}
 					case e, ok := <-client3.Channel():
 						if ok {
-							notify(client3.Id(), e.Data)
+							collect(client3.Id(), e.Data)
 						}
+					case <-quiet:
+						return
 					case <-timeout:
 						return
 					}
