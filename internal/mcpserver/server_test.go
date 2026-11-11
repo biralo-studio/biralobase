@@ -22,8 +22,8 @@ import (
 
 type bearerTransport struct{ token string }
 
-func credentialForTest(key string) string {
-	sum := sha256.Sum256([]byte(key))
+func credentialForTest(key, collectionSecret string) string {
+	sum := sha256.Sum256([]byte(key + "\x00" + collectionSecret))
 	return hex.EncodeToString(sum[:])
 }
 func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -111,7 +111,7 @@ func TestMCPUserRulesFieldsScopesAndOfficialSDK(t *testing.T) {
 	request.Client = &fosite.DefaultClient{ID: "sdk-client", Public: true}
 	request.GrantedScope = principal.Scopes
 	request.GrantedAudience = []string{authorization.Resource}
-	sum := credentialForTest(alice.TokenKey())
+	sum := credentialForTest(alice.TokenKey(), users.AuthToken.Secret)
 	request.Session = &fosite.DefaultSession{Subject: alice.Id, ExpiresAt: map[fosite.TokenType]time.Time{fosite.AccessToken: time.Now().Add(time.Minute)}, Extra: map[string]any{"collection": users.Id, "credential": sum}}
 	strategy := compose.NewOAuth2HMACStrategy(&fosite.Config{GlobalSecret: key})
 	token, signature, err := strategy.GenerateAccessToken(context.Background(), request)

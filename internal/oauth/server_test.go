@@ -16,7 +16,80 @@ import (
 	"github.com/biralo-studio/biralobase/core"
 	_ "github.com/biralo-studio/biralobase/migrations"
 	"github.com/biralo-studio/biralobase/storage/turso"
+	"github.com/biralo-studio/biralobase/tools/types"
 )
+
+func TestOAuthRechecksAuthenticationEligibilityAndCollectionKey(t *testing.T) {
+	for _, engine := range []string{"sqlite", "turso"} {
+		t.Run(engine, func(t *testing.T) {
+			f := setup(t, engine)
+			f.user.SetVerified(true)
+			if err := f.app.Save(f.user); err != nil {
+				t.Fatal(err)
+			}
+			c, err := f.app.FindCollectionByNameOrId("users")
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.AuthRule = types.Pointer("verified = true")
+			if err = f.app.Save(c); err != nil {
+				t.Fatal(err)
+			}
+			f.user, err = f.app.FindRecordById(c.Id, f.user.Id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.token, err = f.user.NewAuthToken()
+			if err != nil {
+				t.Fatal(err)
+			}
+			code, verifier := f.code(t)
+			w := f.exchange(url.Values{"grant_type": {"authorization_code"}, "code": {code}, "code_verifier": {verifier}, "client_id": {f.client}, "redirect_uri": {"https://client.example/callback"}, "resource": {f.server.Resource}})
+			if w.Code != 200 {
+				t.Fatalf("token exchange: %d", w.Code)
+			}
+			var tokens map[string]string
+			// expires_in is numeric, so decode the token fields explicitly.
+			var raw map[string]json.RawMessage
+			if err = json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+				t.Fatal(err)
+			}
+			tokens = map[string]string{}
+			for _, name := range []string{"access_token", "refresh_token"} {
+				var v string
+				if err = json.Unmarshal(raw[name], &v); err != nil {
+					t.Fatal(err)
+				}
+				tokens[name] = v
+			}
+			if _, err = f.server.Authenticate(context.Background(), tokens["access_token"]); err != nil {
+				t.Fatal(err)
+			}
+			f.user.SetVerified(false)
+			if err = f.app.Save(f.user); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.server.Authenticate(context.Background(), tokens["access_token"]); err == nil {
+				t.Error("OAuth access ignores current authentication rule")
+			}
+			refresh := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tokens["refresh_token"]}, "client_id": {f.client}, "resource": {f.server.Resource}}
+			if f.exchange(refresh).Code == 200 {
+				t.Error("ineligible user refreshed OAuth grant")
+			}
+			f.user.SetVerified(true)
+			if err = f.app.Save(f.user); err != nil {
+				t.Fatal(err)
+			}
+			c.AuthToken.Secret = strings.Repeat("r", 50)
+			if err = f.app.Save(c); err != nil {
+				t.Fatal(err)
+			}
+			if _, err = f.server.Authenticate(context.Background(), tokens["access_token"]); err == nil {
+				t.Error("OAuth access survived auth collection key rotation")
+			}
+		})
+	}
+}
 
 type fixture struct {
 	server  *Server

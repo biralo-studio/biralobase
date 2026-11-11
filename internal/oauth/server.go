@@ -76,7 +76,10 @@ func isLoopback(host string) bool {
 	return host == "localhost" || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback())
 }
 func credential(user *core.Record) string {
-	h := sha256.Sum256([]byte(user.TokenKey()))
+	// PocketBase invalidates JWTs with both the record key and collection key.
+	// OAuth grants must follow collection-wide revocation as well as password
+	// changes; otherwise MCP could mint fresh JWTs after an administrator reset.
+	h := sha256.Sum256([]byte(user.TokenKey() + "\x00" + user.Collection().AuthToken.Secret))
 	return hex.EncodeToString(h[:])
 }
 
@@ -91,6 +94,17 @@ func (s *Server) current(session fosite.Session) (*core.Record, error) {
 	}
 	expected, _ := d.Extra["credential"].(string)
 	if subtle.ConstantTimeCompare([]byte(expected), []byte(credential(user))) != 1 {
+		return nil, fosite.ErrRequestUnauthorized
+	}
+	// A grant cannot keep minting user tokens after the account no longer
+	// satisfies its authentication rule (for example verified = true).
+	// This service authenticates as OAuth2, without password-login form data.
+	allowed, err := s.App.CanAccessRecord(user, &core.RequestInfo{
+		Auth: user, Context: core.RequestInfoContextOAuth2,
+		Method: http.MethodPost, Query: map[string]string{},
+		Headers: map[string]string{}, Body: map[string]any{},
+	}, user.Collection().AuthRule)
+	if err != nil || !allowed {
 		return nil, fosite.ErrRequestUnauthorized
 	}
 	return user, nil
