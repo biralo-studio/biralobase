@@ -115,3 +115,59 @@ func TestOutboxAtomicityLeasesAndScheduleRecovery(t *testing.T) {
 		})
 	}
 }
+
+// A job that takes the whole process down while it is being handled is never
+// acknowledged, so only its lease expiry is visible. Such a job must reach the
+// dead-letter state like one that fails ten times; otherwise it is redelivered
+// after every restart for as long as it exists.
+func TestJobThatNeverReturnsIsDeadLettered(t *testing.T) {
+	db := new(turso.Engine)
+	app := core.NewBaseApp(core.BaseAppConfig{DataDir: t.TempDir(), DBConnect: db.Connect, ConcurrentWrites: true})
+	if err := app.Bootstrap(); err != nil {
+		t.Fatal(err)
+	}
+	defer app.ClearBootstrap()
+	q, err := New(app, functions.Definition{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.SetConcurrent(true)
+	now := time.Now()
+	if err = enqueue(app, "poison", "event", "changed", map[string]any{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if err = enqueue(app, "healthy", "event", "changed", map[string]any{}, now.Add(time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	deliveries := 0
+	for attempt := 0; attempt < 30; attempt++ {
+		now = now.Add(6 * time.Minute) // the previous lease has expired
+		job, err := q.Claim(now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if job == nil {
+			continue
+		}
+		if job.ID == "healthy" {
+			if err = q.Complete(*job, nil, now); err != nil {
+				t.Fatal(err)
+			}
+			continue
+		}
+		deliveries++ // the process "crashes" here: no acknowledgement
+	}
+	if deliveries != maxAttempts {
+		t.Fatalf("unacknowledged job was delivered %d times, want %d", deliveries, maxAttempts)
+	}
+	var status struct {
+		Poison  string `db:"poison"`
+		Healthy string `db:"healthy"`
+	}
+	if err = app.DB().NewQuery("SELECT (SELECT status FROM _bb_jobs WHERE id='poison') AS poison, (SELECT status FROM _bb_jobs WHERE id='healthy') AS healthy").One(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Poison != "dead" || status.Healthy != "done" {
+		t.Fatalf("poison job is %q and the job behind it is %q", status.Poison, status.Healthy)
+	}
+}

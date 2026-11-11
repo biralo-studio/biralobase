@@ -23,6 +23,9 @@ import (
 
 const table = "_bb_jobs"
 
+// maxAttempts is the number of deliveries before a job is dead-lettered.
+const maxAttempts = 10
+
 type Job struct {
 	ID       string `db:"id" json:"id"`
 	Kind     string `db:"kind" json:"kind"`
@@ -170,11 +173,29 @@ func (q *Queue) Tick(now time.Time) error {
 }
 
 func (q *Queue) Claim(now time.Time) (*Job, error) {
-	var job *Job
-	err := q.app.RunInTransaction(func(tx core.App) error {
+	for {
+		job, retired, err := q.claim(now)
+		if err != nil || !retired {
+			return job, err
+		}
+	}
+}
+
+func (q *Queue) claim(now time.Time) (job *Job, retired bool, err error) {
+	err = q.app.RunInTransaction(func(tx core.App) error {
+		job, retired = nil, false // the transaction function may run again
 		var matches []Job
 		err := tx.DB().NewQuery(`SELECT id,kind,target,payload,attempts FROM _bb_jobs WHERE (status='pending' AND available_at <= {:now}) OR (status='running' AND lease_until < {:now}) ORDER BY created,id LIMIT 1`).Bind(dbx.Params{"now": now.UnixMilli()}).All(&matches)
 		if err != nil || len(matches) == 0 {
+			return err
+		}
+		// A job that has already used every attempt can only be here because
+		// its last delivery was never acknowledged: the process died while
+		// handling it. Retiring it stops it from being redelivered after every
+		// restart; the caller then claims the job behind it.
+		if matches[0].Attempts >= maxAttempts {
+			_, err = tx.DB().NewQuery(`UPDATE _bb_jobs SET status='dead',last_error='delivery was never acknowledged',lease_until=0,lease='' WHERE id={:id}`).Bind(dbx.Params{"id": matches[0].ID}).Execute()
+			retired = err == nil
 			return err
 		}
 		job = &matches[0]
@@ -183,7 +204,10 @@ func (q *Queue) Claim(now time.Time) (*Job, error) {
 		_, err = tx.DB().NewQuery(`UPDATE _bb_jobs SET status='running',attempts={:attempts},lease={:lease},lease_until={:until} WHERE id={:id}`).Bind(dbx.Params{"id": job.ID, "attempts": job.Attempts, "lease": job.Lease, "until": now.Add(5 * time.Minute).UnixMilli()}).Execute()
 		return err
 	})
-	return job, err
+	if err != nil {
+		return nil, false, err
+	}
+	return job, retired, nil
 }
 
 func (q *Queue) Complete(job Job, handlerErr error, now time.Time) error {
@@ -193,7 +217,7 @@ func (q *Queue) Complete(job Job, handlerErr error, now time.Time) error {
 		// Error messages may contain application secrets. Store a generic reason;
 		// operators get the job ID/attempt count and can use their own safe logs.
 		reason = "handler failed"
-		if job.Attempts >= 10 {
+		if job.Attempts >= maxAttempts {
 			status = "dead"
 		}
 	}
