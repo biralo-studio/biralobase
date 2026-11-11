@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"net/url"
 	"slices"
 	"strings"
@@ -46,6 +47,11 @@ type window struct {
 	Count int
 }
 
+const (
+	maxClients         = 1000
+	abandonedClientAge = 24 * time.Hour
+)
+
 func New(app core.App, origin, authCollection string, scopes []string, secret []byte) (*Server, error) {
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || strings.Trim(u.Path, "/") != "" {
@@ -67,7 +73,7 @@ func New(app core.App, origin, authCollection string, scopes []string, secret []
 	if err = s.Store.Init(); err != nil {
 		return nil, err
 	}
-	config := &fosite.Config{GlobalSecret: secret, AccessTokenLifespan: 15 * time.Minute, RefreshTokenLifespan: 7 * 24 * time.Hour, AuthorizeCodeLifespan: 2 * time.Minute, EnforcePKCE: true, EnablePKCEPlainChallengeMethod: false, ScopeStrategy: fosite.ExactScopeStrategy, RefreshTokenScopes: []string{"offline_access"}}
+	config := &fosite.Config{GlobalSecret: secret, AccessTokenLifespan: 15 * time.Minute, RefreshTokenLifespan: 7 * 24 * time.Hour, AuthorizeCodeLifespan: 2 * time.Minute, EnforcePKCE: true, EnablePKCEPlainChallengeMethod: false, ScopeStrategy: fosite.ExactScopeStrategy, RefreshTokenScopes: []string{"offline_access"}, DisableRefreshTokenValidation: true}
 	s.Provider = compose.Compose(config, s.Store, compose.NewOAuth2HMACStrategy(config), compose.OAuth2AuthorizeExplicitFactory, compose.OAuth2RefreshTokenGrantFactory, compose.OAuth2TokenIntrospectionFactory, compose.OAuth2TokenRevocationFactory, compose.OAuth2PKCEFactory)
 	return s, nil
 }
@@ -111,9 +117,16 @@ func (s *Server) current(session fosite.Session) (*core.Record, error) {
 }
 
 func (s *Server) Authenticate(ctx context.Context, token string) (Principal, error) {
-	_, r, err := s.Provider.IntrospectToken(ctx, token, fosite.AccessToken, new(fosite.DefaultSession))
+	// The requested token type is only a hint to fosite, which otherwise goes
+	// on to accept a refresh token. A refresh token must never work as a bearer
+	// credential: it outlives an access token by days and using it here would
+	// bypass rotation and replay detection at the token endpoint.
+	use, r, err := s.Provider.IntrospectToken(ctx, token, fosite.AccessToken, new(fosite.DefaultSession))
 	if err != nil {
 		return Principal{}, err
+	}
+	if use != fosite.AccessToken {
+		return Principal{}, fosite.ErrRequestUnauthorized
 	}
 	if !r.GetGrantedAudience().Has(s.Resource) {
 		return Principal{}, fosite.ErrRequestUnauthorized
@@ -153,7 +166,7 @@ func (s *Server) Bind(routes *router.Router[*core.RequestEvent]) {
 func (s *Server) limit(e *core.RequestEvent) error {
 	// Bound memory and use the actual peer unless the operator configures a
 	// trusted proxy through PocketBase's validated proxy settings.
-	key := e.RealIP()
+	key := limiterKey(e.RealIP())
 	now := time.Now()
 	s.limiterMu.Lock()
 	if len(s.requests) >= 4096 {
@@ -180,6 +193,25 @@ func (s *Server) limit(e *core.RequestEvent) error {
 	e.Response.Header().Set("Cache-Control", "no-store")
 	e.Response.Header().Set("Referrer-Policy", "no-referrer")
 	return e.Next()
+}
+
+// One IPv6 subscriber controls at least a /64. Counting each of its addresses
+// separately would let a single host both evade the limit and fill the table,
+// which refuses every address it has not seen while it is full.
+func limiterKey(ip string) string {
+	address, err := netip.ParseAddr(ip)
+	if err != nil {
+		return ip
+	}
+	address = address.Unmap()
+	if address.Is4() {
+		return address.String()
+	}
+	prefix, err := address.Prefix(64)
+	if err != nil {
+		return ip
+	}
+	return prefix.String()
 }
 
 func (s *Server) register(e *core.RequestEvent) error {
@@ -218,7 +250,19 @@ func (s *Server) register(e *core.RequestEvent) error {
 	if err := s.App.DB().NewQuery("SELECT count(*) FROM _bb_oauth_clients").Row(&count); err != nil {
 		return err
 	}
-	if count >= 1000 {
+	if count >= maxClients {
+		// Registration is unauthenticated, so the table can be filled by anyone.
+		// Registrations that no user ever authorized are abandoned after a day;
+		// without removing them the limit would disable registration for good.
+		if _, err := s.App.DB().NewQuery("DELETE FROM _bb_oauth_clients WHERE authorized=0 AND created < {:before}").Bind(dbx.Params{"before": time.Now().Add(-abandonedClientAge).Unix()}).Execute(); err != nil {
+			return err
+		}
+		if err := s.App.DB().NewQuery("SELECT count(*) FROM _bb_oauth_clients").Row(&count); err != nil {
+			return err
+		}
+	}
+	if count >= maxClients {
+		e.Response.Header().Set("Retry-After", "3600")
 		return e.JSON(429, map[string]string{"error": "registration_limit_reached"})
 	}
 	c := &fosite.DefaultClient{ID: security.RandomString(32), RedirectURIs: form.Redirects, GrantTypes: []string{"authorization_code", "refresh_token"}, ResponseTypes: []string{"code"}, Scopes: s.Scopes, Audience: []string{s.Resource}, Public: true}
@@ -322,6 +366,9 @@ func (s *Server) consent(e *core.RequestEvent) error {
 			session := &fosite.DefaultSession{Subject: e.Auth.Id, Extra: map[string]any{"collection": s.AuthCollection, "credential": credential(e.Auth)}}
 			response, err := s.Provider.NewAuthorizeResponse(ctx, request, session)
 			if err != nil {
+				return err
+			}
+			if _, err = tx.DB().NewQuery("UPDATE _bb_oauth_clients SET authorized=1 WHERE id={:id}").Bind(dbx.Params{"id": request.GetClient().GetID()}).Execute(); err != nil {
 				return err
 			}
 			s.Provider.WriteAuthorizeResponse(ctx, recorder, request, response)

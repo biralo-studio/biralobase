@@ -37,6 +37,25 @@ func (s *Store) Init() error {
 			return err
 		}
 	}
+	// Databases created before registrations expired lack these columns. Their
+	// existing clients are treated as authorized: they may hold live grants.
+	var columns []struct {
+		Name string `db:"name"`
+	}
+	if err := s.App.DB().NewQuery("PRAGMA table_info(_bb_oauth_clients)").All(&columns); err != nil {
+		return err
+	}
+	present := map[string]bool{}
+	for _, column := range columns {
+		present[column.Name] = true
+	}
+	for _, column := range []struct{ name, definition string }{{"created", "INTEGER NOT NULL DEFAULT 0"}, {"authorized", "INTEGER NOT NULL DEFAULT 1"}} {
+		if !present[column.name] {
+			if _, err := s.App.DB().NewQuery("ALTER TABLE _bb_oauth_clients ADD COLUMN " + column.name + " " + column.definition).Execute(); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 func (s *Store) GetClient(ctx context.Context, id string) (fosite.Client, error) {
@@ -55,7 +74,7 @@ func (s *Store) PutClient(ctx context.Context, name string, client *fosite.Defau
 	if err != nil {
 		return err
 	}
-	_, err = s.db(ctx).NewQuery("INSERT INTO _bb_oauth_clients (id,name,value) VALUES ({:id},{:name},{:value})").Bind(dbx.Params{"id": client.ID, "name": name, "value": string(raw)}).Execute()
+	_, err = s.db(ctx).NewQuery("INSERT INTO _bb_oauth_clients (id,name,value,created,authorized) VALUES ({:id},{:name},{:value},{:created},0)").Bind(dbx.Params{"id": client.ID, "name": name, "value": string(raw), "created": time.Now().Unix()}).Execute()
 	return err
 }
 func (s *Store) ClientAssertionJWTValid(context.Context, string) error {
