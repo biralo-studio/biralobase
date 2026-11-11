@@ -68,5 +68,8 @@ The Action runs application tests, compiles functions, prunes development depend
 - Password changes update the same managed superuser. Existing unmanaged accounts are never silently adopted. A collision with an unmanaged account fails provisioning.
 - Production collection and settings mutations and the SQL console are intentionally blocked. Record CRUD, auth, files, realtime, and the SDKs remain available.
 - Readiness: `/api/biralobase/ready`. A worker failure shuts down the server so requests cannot bypass hooks.
+- Shutdown waits for a running job, for up to two minutes. Keep the stop timeout above that (`stop_grace_period: 3m` in the Compose file); a platform default of 10-30 seconds kills the process instead.
+- Memory grows slowly with the number of committed writes and is only returned by a restart: budget roughly 6-24 MB per million writes with the pinned engine, and watch resident memory on write-heavy applications.
+- OAuth clients that no user authorized within a day are removed once 1000 clients are registered. The OAuth rate limit counts IPv4 addresses and IPv6 /64 networks; it sees the proxy's address unless trusted proxy headers are configured.
 - Superuser-only jobs API: `GET /api/biralobase/jobs?status=dead` and `POST /api/biralobase/jobs/{id}/retry`. Payloads are omitted from listings. Jobs currently need operator-managed archival/retention; completed jobs and expired OAuth sessions are not automatically purged.
 - Replacing a release causes a short interruption. Clients reconnect/retry; this single-instance design does not promise zero-downtime deployment.

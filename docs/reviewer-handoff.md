@@ -1,5 +1,7 @@
 # Biralobase second reviewer briefing
 
+**The outcome of this assignment is in [the second review](second-review.md).** Its fixes change the storage adapter, so the soak results described below no longer qualify the current code. The text below is the original briefing.
+
 Review and patch this prerelease before any production cutover. Correctness tests have uncovered and fixed several real defects, and a private Konnex copy now runs in Coolify. **The requested write-performance improvement has not been demonstrated; the measured HTTP workload was slower than PocketBase. Long-duration qualification is still pending.**
 
 Repository: `git@github.com:biralo-studio/biralobase.git`. Runtime source under review: `4d7b3f0a968f05d82e91f7b7ef464eccb643cbc9`. Subsequent documentation commits do not change that runtime. The inherited compatibility target is PocketBase v0.40.6; the actual Konnex production binary used as the additional reference is v0.40.4.
