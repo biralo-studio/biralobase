@@ -2,7 +2,7 @@
 
 Outcome of the assignment in [the reviewer briefing](reviewer-handoff.md). Branch `review/second-reviewer`, based on `3a8be03c`.
 
-**Not ready for a stable release.** Eight defects were reproduced and fixed with regression tests. One engine limitation that cannot be fixed in this repository was found and measured. The patched image is built but **not deployed**, and the extended Linux gates have **not** been rerun on the patched storage code; both need a decision recorded under [Open](#open).
+**Not ready for a stable release.** Eight defects were reproduced and fixed with regression tests. One engine limitation that cannot be fixed in this repository was found and measured. The patched image is deployed to the private Konnex copy and passed the comparison, authorization and restore checks there. The extended Linux gates have **not** been rerun on the patched storage code; see [Open](#open).
 
 ## Fixes
 
@@ -80,13 +80,18 @@ Shutdown waits for a running job for up to two minutes. `deploy/compose.yaml` al
 | Native Linux matrix, `89302606` (documentation only) | **Failed in one job**: run `43121398608`, `test (ubuntu-24.04, turso)`. The inherited `TestRealtimeRecordResolve` collected events for a fixed 250 ms that started before three durable writes; the same code passed in the two runs above. Made independent of write latency in `ac0fb382` |
 | Native Linux matrix, later commits | Not recorded here: `gh run list --branch review/second-reviewer` |
 | `main` at `3a8be03c` (runtime `4d7b3f0a`) | Passed: run `43098720205` |
-| Linux amd64 6h and 24h soaks | Running on storage source `5d9a8dce`. They no longer qualify the patched adapter. At 3.5 hours they held 795 MB and 735 MB of a 1 GiB limit with a 16 KB database |
+| Linux amd64 6h soak, storage source `5d9a8dce` | **Passed** 2026-11-12 02:00 UTC: exit 0, no OOM, no restarts, 18,966,400 verified writes. It ran the earlier adapter and the earlier soak (reopen every round, no backups, tmpfs), so it does not qualify the patched adapter |
+| Linux amd64 24h soak, storage source `5d9a8dce` | Running. At six hours it held 838 MB of its 1 GiB limit (peak 890 MB) with a 16 KB database and was growing by about 40 MB an hour; it is unlikely to reach 24 hours |
 | macOS arm64 24h soak | **Failed at 2h31m** with `no storage space`: the workstation disk filled during this review. Not a storage verdict. Restarted on `da6ad4f5` at 2026-11-11 23:30 UTC; see `.artifacts/reviewer2-soak-arm64-24h.json` |
-| Konnex copy on the patched image | **Not run** |
+| Konnex copy on the patched image, 2026-11-12 01:52 UTC | **Passed** on `biralobase:review-da6ad4f5`, image ID `sha256:86ad7a88209c9084071b552c040ee688ad44db1dbbfc4d2865aa4c4e20bd9209`: 28 collections, 660 records and 41 files identical to the PocketBase reference before and after the drill; 28 user-permission and 28 function-delegation checks, OAuth/MCP and revocation; backup, restore through the API and restart with all 660 records and 41 files. Reports: `.artifacts/reviewer2-comparison.json`, `reviewer2-auth.json`, `reviewer2-restore.json`, `reviewer2-comparison-after-restore.json` |
+
+## Lab notes
+
+Stopping or restarting a Coolify service prunes every local image that no running container uses. The first restart for this review removed the freshly built runtime image, the unused earlier `biralobase:review-*` images and the `biralobase-pocketbase-reference:0.40.4` tag, and the start then failed at once because the services use `pull_policy: never`. Nothing was lost: the images were rebuilt from `source-da6ad4f5` (hence new image IDs), and the reference tag was restored from the same image, `sha256:5bc872da09a321fd9008edcbb9b69c8ed33ddbecaae71a6140fa2122110fda27`, which another service on the host keeps in use. Before starting a stopped lab service, check that its images exist; rebuild or re-tag first. The service restart endpoints require `POST`.
 
 ## Open
 
-- **Deploy and requalify.** `biralobase:review-da6ad4f5` (image ID `sha256:c069617a22319069c156f319a42e346884adf785f679067c133ead8c1fff5aad`) and `biralobase-qualification:review-da6ad4f5` (`sha256:33267acce70312c849c8329071f8451a4a063d017e6054f001ad16a152c9eb8a`) are built on the lab host from `source-da6ad4f5`. The Coolify service still runs `review-4d7b3f0a`. Changing it, rerunning the comparison, authorization and restore scripts, and starting 6h and 24h soaks on the patched adapter were not done because they modify a shared host.
+- **Extended gates on the patched adapter.** `biralobase-qualification:review-da6ad4f5` (image ID `sha256:b0917b64c3f0a4d187e85602623a928c5c5cd3aed0f5d01fe7d8dec56f32fe89`) is built on the lab host but its 6h and 24h soaks have not been started. `python3 .artifacts/review-private/reviewer2-coolify.py soaks` creates and starts them as a separate Coolify service with the limits of the existing ones.
 - The lab host runs many unrelated services. It is not dedicated hardware.
 - Native Linux ARM64 extended qualification needs a runner to be provisioned.
 - Konnex frontend journeys were not run.
