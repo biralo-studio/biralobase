@@ -2,7 +2,7 @@
 
 Outcome of the assignment in [the reviewer briefing](reviewer-handoff.md). Branch `review/second-reviewer`, based on `3a8be03c`.
 
-**Not ready for a stable release.** Eight defects were reproduced and fixed with regression tests. One engine limitation that cannot be fixed in this repository was found and measured. The patched image is deployed to the private Konnex copy and passed the comparison, authorization and restore checks there. The extended Linux gates have **not** been rerun on the patched storage code; see [Open](#open).
+**Not ready for a stable release.** Eight defects were reproduced and fixed with regression tests. One engine limitation that cannot be fixed in this repository was found and measured. The patched image is deployed to the private Konnex copy and passed the comparison, authorization and restore checks there. The extended Linux gates on the patched storage code were started on 2026-11-12 and are **not complete**; see [Open](#open).
 
 ## Fixes
 
@@ -91,7 +91,7 @@ Stopping or restarting a Coolify service prunes every local image that no runnin
 
 ## Open
 
-- **Extended gates on the patched adapter.** `biralobase-qualification:review-da6ad4f5` (image ID `sha256:b0917b64c3f0a4d187e85602623a928c5c5cd3aed0f5d01fe7d8dec56f32fe89`) is built on the lab host but its 6h and 24h soaks have not been started. `python3 .artifacts/review-private/reviewer2-coolify.py soaks` creates and starts them as a separate Coolify service with the limits of the existing ones.
+- **Extended gates on the patched adapter are running, not passed.** Coolify service `b7exyocu6nitpzi3njpqmlo9` (`biralobase-storage-qualification-da6ad4f5`), image `biralobase-qualification:review-da6ad4f5` (`sha256:b0917b64c3f0a4d187e85602623a928c5c5cd3aed0f5d01fe7d8dec56f32fe89`), started 2026-11-12 02:03 UTC with the limits of the earlier soaks. Expect `soak6h-b7exyocu6nitpzi3njpqmlo9` around 08:03 UTC and `soak24h-b7exyocu6nitpzi3njpqmlo9` around 02:03 UTC on 2026-11-13. Require `PASS`, exit 0, no OOM, and read the final `memory:` line. They run on tmpfs, so they do not exercise a real disk sync.
 - The lab host runs many unrelated services. It is not dedicated hardware.
 - Native Linux ARM64 extended qualification needs a runner to be provisioned.
 - Konnex frontend journeys were not run.
