@@ -113,11 +113,11 @@ func TestCrashRecovery(t *testing.T) {
 // requires checkpoints to keep the MVCC log bounded. A lane that only reopens
 // cannot observe state that accumulates in a running process.
 //
-// Writes are paced, by default to 100 a second in each lane, because the
-// v0.8.3 engine does not return all memory for a committed write transaction:
-// about 6 bytes stay resident per commit when one row is updated repeatedly
-// and 15-20 in this workload, on Linux and macOS alike, and closing the
-// database does not release them. SQLite and Turso reads show no such growth.
+// Writes are paced, by default to 100 a second in each lane, because sustained
+// v0.8.3 write workloads showed growing process memory. Extended Linux runs
+// measured substantially more growth than the initial short probes; see
+// docs/second-review.md. These process-level measurements include both lanes,
+// backup handles and allocator behavior, and do not isolate an engine leak.
 // Unpaced, this test commits tens of millions of transactions an hour and
 // exhausts a 1 GiB container long before a 24-hour run can finish, whatever
 // the state of the data. Every round is still a full-speed burst from eight
@@ -181,7 +181,7 @@ const soakCycle = 30 * time.Second
 func soakLane(t *testing.T, name, path string, deadline time.Time, longLived bool, pace float64, writes *atomic.Int64) {
 	nextProgress := time.Now().Add(time.Minute)
 	nextCycle := time.Now().Add(soakCycle)
-	var count atomic.Int64
+	var count, verified atomic.Int64
 	var retained, backups, restarts int64
 	var e *turso.Engine
 	var db *dbx.DB
@@ -252,35 +252,38 @@ func soakLane(t *testing.T, name, path string, deadline time.Time, longLived boo
 				for i := 0; i < 100 && time.Now().Before(deadline); i++ {
 					id := fmt.Sprintf("%d-%d-%d", round, worker, i)
 					if _, err := db.DB().Exec("INSERT INTO workload VALUES (?,?)", id, i); err != nil {
-						failures <- err
+						failures <- fmt.Errorf("insert %s: %w", id, err)
 						return
 					}
+					// Count the acknowledged commit before checking rollback/read
+					// behavior. A later verification failure cannot undo this insert.
+					count.Add(1)
+					writes.Add(1)
 					tx, err := db.DB().Begin()
 					if err != nil {
-						failures <- err
+						failures <- fmt.Errorf("begin rollback probe %s: %w", id, err)
 						return
 					}
 					_, err = tx.Exec("UPDATE workload SET value=-1 WHERE id=?", id)
 					rollbackErr := tx.Rollback()
 					if err != nil {
-						failures <- err
+						failures <- fmt.Errorf("update rollback probe %s: %w", id, err)
 						return
 					}
 					if rollbackErr != nil {
-						failures <- rollbackErr
+						failures <- fmt.Errorf("rollback probe %s: %w", id, rollbackErr)
 						return
 					}
 					var got int
 					if err = db.DB().QueryRow("SELECT value FROM workload WHERE id=?", id).Scan(&got); err != nil {
-						failures <- err
+						failures <- fmt.Errorf("read committed row %s: %w", id, err)
 						return
 					}
 					if got != i {
 						failures <- fmt.Errorf("rollback/read mismatch: %s", id)
 						return
 					}
-					count.Add(1)
-					writes.Add(1)
+					verified.Add(1)
 				}
 			}(worker)
 		}
@@ -294,6 +297,10 @@ func soakLane(t *testing.T, name, path string, deadline time.Time, longLived boo
 			t.Errorf("%s: %v", name, err)
 		} else if stored != count.Load()-retained {
 			t.Errorf("%s: stored %d, acknowledged since pruning %d", name, stored, count.Load()-retained)
+		}
+		if t.Failed() {
+			t.Logf("failed[%s]: acknowledged=%d verified=%d stored=%d retained=%d round=%d", name, count.Load(), verified.Load(), stored, retained, round)
+			return
 		}
 		// Keep a bounded working set during 6/24-hour gates. Every row is
 		// verified above before deletion. This also exercises deletion and

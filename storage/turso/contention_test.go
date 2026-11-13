@@ -4,6 +4,7 @@ package turso_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,57 @@ import (
 
 	"github.com/biralo-studio/biralobase/storage/turso"
 )
+
+func TestFailedBackupDoesNotStopCheckpoints(t *testing.T) {
+	for _, destination := range []string{"existing", "missing-directory"} {
+		t.Run(destination, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, "data.db")
+			e := new(turso.Engine)
+			db, err := e.Connect(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			db.DB().SetMaxOpenConns(1)
+			db.DB().SetMaxIdleConns(1)
+			if _, err = db.DB().Exec("CREATE TABLE workload(id INTEGER PRIMARY KEY,payload TEXT)"); err != nil {
+				t.Fatal(err)
+			}
+			e.SetConcurrent(true)
+			if _, err = db.DB().Exec("INSERT INTO workload VALUES (1,'before backup')"); err != nil {
+				t.Fatal(err)
+			}
+			copyPath := filepath.Join(dir, "missing", "copy.db")
+			if destination == "existing" {
+				copyPath = filepath.Join(dir, "copy.db")
+				if err = os.WriteFile(copyPath, []byte("occupied"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err = db.DB().Exec("VACUUM INTO '" + copyPath + "'"); err == nil {
+				t.Fatal("invalid backup destination was accepted")
+			}
+			if _, err = db.DB().Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+				t.Fatal("checkpoint after failed backup:", err)
+			}
+			before := size(t, path)
+			payload := strings.Repeat("x", 4096)
+			for range 2500 {
+				if _, err = db.DB().Exec("INSERT INTO workload(payload) VALUES (?)", payload); err != nil {
+					t.Fatal("write after failed backup:", err)
+				}
+			}
+			if grown, log := size(t, path)-before, size(t, path+"-log"); grown < 8<<20 || log > 8<<20 {
+				t.Fatalf("after a failed backup, 10 MiB of rows grew the database by %d bytes and left a %d byte log: checkpoints are blocked", grown, log)
+			}
+			var rows int
+			if err = db.DB().QueryRow("SELECT count(*) FROM workload").Scan(&rows); err != nil || rows != 2501 {
+				t.Fatalf("committed data after failed backup: %d %v", rows, err)
+			}
+		})
+	}
+}
 
 func processCPU(t *testing.T) time.Duration {
 	t.Helper()
