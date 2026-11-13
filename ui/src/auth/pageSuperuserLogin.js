@@ -1,3 +1,4 @@
+import { brand } from "../base/brand";
 export function pageSuperuserLogin(route) {
     app.store.title = "Superuser login";
 
@@ -54,7 +55,7 @@ export function pageSuperuserLogin(route) {
         },
         t.header(
             { className: "txt-center m-b-base" },
-            t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
+            brand(),
             t.h5(
                 { className: "m-t-10" },
                 t.span(null, () => app.store.title),

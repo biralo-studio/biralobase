@@ -1,4 +1,5 @@
 import PocketBase, { getTokenPayload } from "pocketbase";
+import { brand } from "../base/brand";
 
 export function pageConfirmVerification(route) {
     const token = route.params?.token || "";
@@ -70,7 +71,7 @@ export function pageConfirmVerification(route) {
         },
         t.header(
             { className: "txt-center m-b-base" },
-            t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
+            brand(),
             t.h5({ className: "m-t-10" }, () => app.store.title),
         ),
         () => {

@@ -1,3 +1,4 @@
+import { brand } from "../base/brand";
 export function pageRequestSuperuserPasswordReset(route) {
     app.store.title = "Forgotten superuser password";
 
@@ -31,7 +32,7 @@ export function pageRequestSuperuserPasswordReset(route) {
         },
         t.header(
             { className: "txt-center m-b-base" },
-            t.img({ className: "main-logo", src: () => app.store.mainLogo, ariaHidden: true, alt: "App logo" }),
+            brand(),
             t.h5({ className: "m-t-10" }, () => app.store.title),
         ),
         () => {

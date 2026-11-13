@@ -23,8 +23,9 @@ export function appHeader() {
                 },
             },
             t.a(
-                { href: "#/", className: "logo" },
-                t.img({ src: () => app.store.headerLogo, alt: "App logo" }),
+                { href: "#/", className: "logo", ariaLabel: "Biralobase home" },
+                t.img({ src: () => app.store.headerLogo, alt: "" }),
+                t.span({ className: "brand-name" }, "Biralobase"),
             ),
             t.nav(
                 {

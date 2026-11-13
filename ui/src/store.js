@@ -51,7 +51,7 @@ window.app.store = store({
         {
             href: import.meta.env.PB_RELEASES,
             icon: "ri-github-line",
-            label: `PocketBase ${import.meta.env.PB_VERSION}`,
+            label: "Biralobase",
         },
     ],
 
@@ -247,7 +247,7 @@ window.addEventListener("hashchange", () => {
     app.store.errors = null;
 });
 
-// append the app settings name to document.title.
+// Keep the product identity alongside the page and application names.
 watch(() => {
     let titleParts = app.utils.toArray(app.store.title);
 
@@ -256,6 +256,9 @@ watch(() => {
         titleParts.push(appName);
     }
 
+    if (!titleParts.includes("Biralobase")) {
+        titleParts.push("Biralobase");
+    }
     document.title = titleParts.join(" - ");
 });
 

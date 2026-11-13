@@ -1,10 +1,14 @@
 # Biralobase
 
-PocketBase applications on the embedded Rust Turso engine, with Git-managed schema, asynchronous TypeScript functions, immutable application releases, and OAuth-protected MCP tools.
+<img src="ui/public/images/wordmark.svg" alt="Biralobase with its black-cat mascot" width="420" />
+
+Biralobase runs PocketBase-compatible applications on the embedded Rust Turso engine, with Git-managed schema, asynchronous TypeScript functions, immutable application releases, and OAuth-protected MCP tools.
 
 **Experimental development release.** The implementation has automated regression coverage, but production certification requires the native Linux matrix, container verification, and extended stability gates described in [testing](docs/testing.md). Turso MVCC is experimental; concurrent transactions can conflict. This project makes no claim of lock-free operation or a measured speedup over SQLite.
 
 Biralobase forks PocketBase **v0.40.6**. The original history, MIT license, dashboard, API implementation, and regression tests are retained. [UPSTREAM.json](UPSTREAM.json) records the upstream revision. This is an independent Biralo Studio project, not an official PocketBase or Turso product.
+
+Biralobase takes its name from *biralo*, the Nepali word for cat. Its mascot is a black cat with golden eyes.
 
 ## What is implemented
 

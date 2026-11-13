@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Biralobase black cat</title>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="#faf8f2" stroke="#dedbd3"/>
+  <path fill="#111116" d="M12 29 10 11Q10 7 14 10L25 18Q32 16 39 18L50 10Q54 7 54 11L52 29C58 45 47 56 32 56S6 45 12 29Z"/>
+  <path fill="#34343d" d="m15 15 2 12 6-6Zm34 0-8 6 6 6Z"/>
+  <ellipse cx="23" cy="34" rx="6" ry="4.5" fill="#e7c76b"/>
+  <ellipse cx="41" cy="34" rx="6" ry="4.5" fill="#e7c76b"/>
+  <ellipse cx="24" cy="34" rx="1.5" ry="3.5" fill="#111116"/>
+  <ellipse cx="40" cy="34" rx="1.5" ry="3.5" fill="#111116"/>
+  <path fill="#e7c76b" d="M29 43h6l-3 3Z"/>
+</svg>

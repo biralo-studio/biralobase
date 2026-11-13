@@ -1264,8 +1264,27 @@ a.thumb {
     }
 }
 
+.brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+}
+
+.brand-name {
+    font-weight: 700;
+    letter-spacing: -0.03em;
+}
+
+.brand .brand-name {
+    font-size: 22px;
+    line-height: 1.2;
+}
+
 .main-logo {
-    max-height: 40px;
+    max-height: 64px;
+    max-width: 100%;
+    object-fit: contain;
 }
 
 .dragline {

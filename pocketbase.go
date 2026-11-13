@@ -221,7 +221,7 @@ func (pb *PocketBase) eagerParseFlags(config *Config) error {
 		&pb.dataDirFlag,
 		"dir",
 		config.DefaultDataDir,
-		"the PocketBase data directory",
+		"the Biralobase data directory",
 	)
 
 	pb.RootCmd.PersistentFlags().StringVar(

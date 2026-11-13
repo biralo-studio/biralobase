@@ -26,7 +26,7 @@ func Execute(ctx context.Context, args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	root := &cobra.Command{Use: "biralobase", Short: "PocketBase-compatible applications on Turso", Version: server.Version, SilenceUsage: true, SilenceErrors: true}
+	root := &cobra.Command{Use: "biralobase", Short: "Biralobase: a PocketBase-compatible backend on Turso", Version: server.Version, SilenceUsage: true, SilenceErrors: true}
 	root.SetArgs(args)
 	root.SetOut(output)
 	root.SetErr(output)
