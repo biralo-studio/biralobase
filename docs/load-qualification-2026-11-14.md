@@ -32,6 +32,8 @@ The lab retains its internal network, private mounts and two-CPU/1-GiB limits.
   growth was 18.5 bytes per insert. This does not qualify Linux or long runs.
 - [CI on `c02b76e1`](https://github.com/biralo-studio/biralobase/actions/runs/43627667343)
   passed all seven jobs, including native Linux AMD64/ARM64 and both engines.
+- [CI on tooling commit `4461710f`](https://github.com/biralo-studio/biralobase/actions/runs/43629272481)
+  also passed all seven jobs, including the new report-failure regressions.
 - The rebuilt Konnex copy matched the reference: 28 collections, 660 records,
   41 files, zero differences with copied-auth `updated` timestamps excluded.
 - Authorization passed 28 user-permission and 28 function-delegation checks,
@@ -65,11 +67,23 @@ These reporting changes do not fix the runtime OOM. The interrupted runs' lost
 request/latency counters cannot be reconstructed reliably.
 
 The two interrupted runs left 9,889 synthetic rows, inventoried by their two
-unique prefixes before cleanup. Recovery verification is recorded below once
-complete. The OOM needs a separate application-level allocation profile and a
-controlled comparison of CRUD alone, idle backups and concurrent CRUD/backups;
-the storage probes' Go heap measurements cannot identify the API process's
-allocations.
+unique prefixes and then removed. A smaller CRUD-only run passed all 4,000
+requests (concurrency 1, 8 and 16, 40 iterations/client) and all 1,000 cleanup
+deletes. This is not an equivalent-duration capacity control for the failed run.
+
+After cleanup, comparison with the reference passed for all 660 records and 41
+files. The idle backup/restore drill also passed, including an intentional
+disposable mutation and restart: 28 collections, 660 records and 41 files were
+restored identically. A further reference comparison passed with zero
+differences. The lab ended healthy. During this idle drill, one-second sampling
+still observed **858.8 MiB peak RSS**; very little room remains within the same
+1 GiB limit even without concurrent write traffic.
+
+The OOM needs a separate application-level allocation profile and a controlled
+comparison of CRUD alone, idle backups and concurrent CRUD/backups at equivalent
+sizes/durations. The storage probes' Go heap measurements cannot identify the
+API process's allocations. No production durability setting or memory limit was
+relaxed to obtain a pass.
 
 ## Persistent-disk storage workloads
 
@@ -101,8 +115,10 @@ Increasing the idle pool did not eliminate RSS growth. The backup-free probe
 also grew; backups cannot explain all growth. Go heap was small relative to RSS,
 but these measurements do not distinguish live native allocations from allocator
 retention. The sample is too short for a reliable long-run bytes/write estimate.
-At ten minutes, both full gates had acknowledged 120,000 inserts without an
-error; current RSS was approximately 391 and 402 MiB. Both were still running.
+At the final 22-minute check, both full gates had acknowledged 263,200 inserts
+without an error, OOM or restart; current RSS was approximately 533 and 540 MiB,
+with Go heaps of 3.4 and 3.5 MiB. Both were still running. These progress counters
+are not final passes and do not resolve the earlier lock failure.
 
 Each insert is followed by an update/rollback probe and a verified read. Working
 sets are pruned after verification, so retained customer rows are not what makes
@@ -129,6 +145,9 @@ On the lab host, `/srv/biralobase-review/20261114/` contains:
 - `candidate-oom-kernel.log` and `candidate-restart-docker.log`: independent
   historical evidence of the API container's OOM and exit 137. Later samples
   and events are under `candidate-telemetry/` and `candidate-live-events.jsonl`.
+- `idle-backup-telemetry/samples.jsonl`: one-second memory samples during the
+  successful idle backup/restore drill; `http-crud-only.json` records the
+  CRUD-only control run before that drill.
 
 [`monitor-soak-containers.py`](../scripts/monitor-soak-containers.py) runs on the
 host independently of the workstation and SSH session. It stops after all five

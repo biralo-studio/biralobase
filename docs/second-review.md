@@ -105,7 +105,8 @@ Raw local results are in `.artifacts/merge-review-*.log`; private fixture report
 
 ## Open
 
-- **Resolve the patched 24-hour lock failure, then rerun the extended gates with the corrected diagnostics.** Coolify service `b7exyocu6nitpzi3njpqmlo9` (`biralobase-storage-qualification-da6ad4f5`), image `biralobase-qualification:review-da6ad4f5` (`sha256:b0917b64c3f0a4d187e85602623a928c5c5cd3aed0f5d01fe7d8dec56f32fe89`), contains the exited runs and their logs. Their 1 GiB memory and 512 MiB tmpfs limits must be recorded when comparing results. They do not exercise real disk sync; add a persistent-disk run. Require `PASS`, exit 0, no OOM, and read the final `memory:` line.
+- **Resolve the patched 24-hour lock failure and qualify the corrected diagnostics.** The old runs used 1 GiB memory and 512 MiB tmpfs, without real disk sync. Their logs/state are now archived on the lab host under `/srv/biralobase-review/20261114/previous-results/`. Coolify service `b7exyocu6nitpzi3njpqmlo9` was rebuilt on `c02b76e1` and now runs persistent-disk replacements with retained failure data; see the [new investigation](load-qualification-2026-11-14.md). Require `PASS`, exit 0, no OOM, and inspect the memory trend.
+- **Resolve the API/backup memory failure.** On November 14, concurrent synthetic CRUD and backups OOM-killed the 1 GiB candidate. A smaller CRUD-only run and the later idle restore passed, but the idle backup/restore drill still reached 858.8 MiB RSS. Data comparison after cleanup and restore remained identical. A successful recovery does not resolve the availability failure.
 - The lab host runs many unrelated services. It is not dedicated hardware.
 - Native Linux ARM64 extended qualification needs a runner to be provisioned.
 - Konnex frontend journeys were not run.
