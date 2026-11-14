@@ -9,7 +9,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"syscall"
@@ -129,35 +128,41 @@ func TestStorageSoak(t *testing.T) {
 	if raw == "" {
 		t.Skip("set BIRALOBASE_SOAK_DURATION for the continuous soak gate")
 	}
-	duration, err := time.ParseDuration(raw)
-	if err != nil || duration <= 0 {
-		t.Fatal("invalid soak duration")
+	options, err := readSoakOptions()
+	if err != nil {
+		t.Fatal(err)
 	}
-	pace := 100.0
-	if raw := os.Getenv("BIRALOBASE_SOAK_WRITES_PER_SECOND"); raw != "" {
-		if pace, err = strconv.ParseFloat(raw, 64); err != nil || pace < 0 {
-			t.Fatal("invalid soak write rate")
+	dir := ""
+	if options.Artifacts != "" {
+		if err = os.MkdirAll(options.Artifacts, 0700); err != nil {
+			t.Fatal(err)
 		}
+		// Never reuse or delete a previous run's evidence. This directory
+		// survives failure, unlike testing.T.TempDir's automatic cleanup.
+		if dir, err = os.MkdirTemp(options.Artifacts, "soak-"); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		dir = t.TempDir()
 	}
-	dir := t.TempDir()
-	deadline := time.Now().Add(duration)
+	t.Logf("configuration: %+v; evidence=%s", options, dir)
+	deadline := time.Now().Add(options.Duration)
 	var writes atomic.Int64
+	stopDiagnostics := monitorSoak(t, dir, &writes)
+	defer stopDiagnostics()
 	// Measure growth after the pools, caches and allocator have settled.
 	var settledWrites, settledRSS atomic.Int64
-	settle := time.AfterFunc(min(5*time.Minute, duration/5), func() {
+	settle := time.AfterFunc(min(5*time.Minute, options.Duration/5), func() {
 		settledWrites.Store(writes.Load())
 		settledRSS.Store(peakRSS())
 	})
 	defer settle.Stop()
 	var lanes sync.WaitGroup
-	for _, lane := range []struct {
-		name      string
-		longLived bool
-	}{{"restarted", false}, {"long-lived", true}} {
+	for _, lane := range options.Lanes {
 		lanes.Add(1)
 		go func() {
 			defer lanes.Done()
-			soakLane(t, lane.name, filepath.Join(dir, lane.name+".db"), deadline, lane.longLived, pace, &writes)
+			soakLane(t, lane, filepath.Join(dir, lane+".db"), deadline, lane == "long-lived", options, &writes)
 		}()
 	}
 	lanes.Wait()
@@ -175,12 +180,9 @@ func TestStorageSoak(t *testing.T) {
 // they have stopped and committed rows are accumulating in memory.
 const soakLogLimit = 64 << 20
 
-// How often the restarted lane reopens and the long-lived lane backs up.
-const soakCycle = 30 * time.Second
-
-func soakLane(t *testing.T, name, path string, deadline time.Time, longLived bool, pace float64, writes *atomic.Int64) {
+func soakLane(t *testing.T, name, path string, deadline time.Time, longLived bool, options soakOptions, writes *atomic.Int64) {
 	nextProgress := time.Now().Add(time.Minute)
-	nextCycle := time.Now().Add(soakCycle)
+	nextCycle := time.Now().Add(options.Cycle)
 	var count, verified atomic.Int64
 	var retained, backups, restarts int64
 	var e *turso.Engine
@@ -198,6 +200,7 @@ func soakLane(t *testing.T, name, path string, deadline time.Time, longLived boo
 		}
 		e.SetConcurrent(true)
 		db.DB().SetMaxOpenConns(8)
+		db.DB().SetMaxIdleConns(options.IdleConns)
 		return true
 	}
 	defer func() {
@@ -218,14 +221,18 @@ func soakLane(t *testing.T, name, path string, deadline time.Time, longLived boo
 		before := count.Load() - retained
 		cycle := time.Now().After(nextCycle)
 		if cycle {
-			nextCycle = time.Now().Add(soakCycle)
+			nextCycle = time.Now().Add(options.Cycle)
 		}
-		if longLived && cycle {
+		if longLived && cycle && options.Backups {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				copyPath := path + ".backup"
-				defer os.Remove(copyPath)
+				// Keep the most recent snapshot for postmortem inspection.
+				if err := os.Remove(copyPath); err != nil && !os.IsNotExist(err) {
+					failures <- fmt.Errorf("remove previous backup: %w", err)
+					return
+				}
 				if _, err := db.DB().Exec("VACUUM INTO '" + copyPath + "'"); err != nil {
 					failures <- fmt.Errorf("backup: %w", err)
 					return
@@ -326,14 +333,18 @@ func soakLane(t *testing.T, name, path string, deadline time.Time, longLived boo
 			db = nil
 			restarts++
 		}
-		if pace > 0 {
-			budget := time.Duration(float64(count.Load()-roundWrites) / pace * float64(time.Second))
+		if options.Rate > 0 {
+			budget := time.Duration(float64(count.Load()-roundWrites) / options.Rate * float64(time.Second))
 			if wait := min(time.Until(roundStarted.Add(budget)), time.Until(deadline)); wait > 0 {
 				time.Sleep(wait)
 			}
 		}
 		if time.Now().After(nextProgress) {
 			t.Logf("progress[%s]: writes=%d rounds=%d restarts=%d backups=%d log=%dKiB peak_rss=%dMiB remaining=%s", name, count.Load(), round+1, restarts, backups, logSize>>10, peakRSS()>>20, time.Until(deadline).Round(time.Second))
+			if db != nil {
+				stats := db.DB().Stats()
+				t.Logf("pool[%s]: open=%d idle=%d in_use=%d idle_closed=%d waits=%d wait_time=%s", name, stats.OpenConnections, stats.Idle, stats.InUse, stats.MaxIdleClosed, stats.WaitCount, stats.WaitDuration)
+			}
 			nextProgress = time.Now().Add(time.Minute)
 		}
 	}
