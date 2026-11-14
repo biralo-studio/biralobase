@@ -25,6 +25,9 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '26.13.1'
+      - name: Qualification report regressions
+        if: matrix.engine == 'sqlite' && matrix.runner == 'ubuntu-24.04'
+        run: python3 -m unittest discover -s scripts -p test_load_disposable_copy.py -v
       - name: Upstream regression suite and Biralobase tests
         env:
           ENGINE: ${{ matrix.engine }}

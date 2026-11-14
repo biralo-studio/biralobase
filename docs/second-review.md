@@ -91,6 +91,10 @@ Shutdown waits for a running job for up to two minutes. `deploy/compose.yaml` al
 
 ## Lab notes
 
+The [2026-11-14 rebuild and load investigation](load-qualification-2026-11-14.md)
+records the branded deployment, persistent-disk replacement gates, connection and
+backup probes, and durable memory/lock diagnostics.
+
 Stopping or restarting a Coolify service prunes every local image that no running container uses. The first restart for this review removed the freshly built runtime image, the unused earlier `biralobase:review-*` images and the `biralobase-pocketbase-reference:0.40.4` tag, and the start then failed at once because the services use `pull_policy: never`. Nothing was lost: the images were rebuilt from `source-da6ad4f5` (hence new image IDs), and the reference tag was restored from the same image, `sha256:5bc872da09a321fd9008edcbb9b69c8ed33ddbecaae71a6140fa2122110fda27`, which another service on the host keeps in use. Before starting a stopped lab service, check that its images exist; rebuild or re-tag first. The service restart endpoints require `POST`.
 
 ## Integration verification, 2026-11-13
